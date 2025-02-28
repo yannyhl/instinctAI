@@ -1,0 +1,28 @@
+{
+    "config": {
+        "layers": 2,
+        "units": [
+            128,
+            64
+        ],
+        "dropout": 0.2,
+        "batch_size": 32,
+        "epochs": 100,
+        "patience": 10,
+        "learning_rate": 0.001,
+        "bidirectional": false,
+        "batch_norm": true,
+        "loss": "mean_squared_error",
+        "optimizer": "adam"
+    },
+    "sequence_length": 60,
+    "prediction_horizon": 5,
+    "features": [
+        "close",
+        "volume",
+        "open",
+        "high",
+        "low"
+    ],
+    "target": "close"
+}

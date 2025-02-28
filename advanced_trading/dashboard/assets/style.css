@@ -1,0 +1,190 @@
+/* Dashboard Styles */
+
+/* Main container */
+#app-container {
+    font-family: 'Roboto', sans-serif;
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 20px;
+    background-color: #f8f9fa;
+}
+
+/* Header area */
+#header-area {
+    margin-bottom: 30px;
+    text-align: center;
+    padding: 20px;
+    background-color: #343a40;
+    color: white;
+    border-radius: 5px;
+}
+
+#header-title {
+    margin: 0;
+    font-size: 2.2em;
+    font-weight: 700;
+}
+
+#header-description {
+    margin: 10px 0 0;
+    font-size: 1.2em;
+    opacity: 0.8;
+}
+
+/* Tabs */
+.dash-tab {
+    padding: 15px 20px;
+    font-weight: 500;
+}
+
+.dash-tab--selected {
+    background-color: #007bff;
+    color: white;
+}
+
+/* Cards and content areas */
+.card {
+    background-color: white;
+    border-radius: 5px;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+    padding: 20px;
+    margin-bottom: 20px;
+}
+
+/* Tables */
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 20px 0;
+}
+
+th, td {
+    padding: 12px 15px;
+    text-align: left;
+    border-bottom: 1px solid #ddd;
+}
+
+th {
+    background-color: #f2f2f2;
+    font-weight: 600;
+}
+
+tr:hover {
+    background-color: #f5f5f5;
+}
+
+/* Footer */
+#footer {
+    margin-top: 30px;
+    padding: 15px;
+    background-color: #f2f2f2;
+    border-radius: 5px;
+    text-align: center;
+    font-size: 0.9em;
+    color: #666;
+}
+
+/* Responsive grid adjustments */
+.row {
+    display: flex;
+    flex-wrap: wrap;
+    margin: 0 -15px;
+}
+
+.row:after {
+    content: "";
+    clear: both;
+    display: table;
+}
+
+.columns {
+    padding: 0 15px;
+    margin-bottom: 20px;
+}
+
+.twelve.columns {
+    width: 100%;
+}
+
+.eight.columns {
+    width: 66.6667%;
+}
+
+.six.columns {
+    width: 50%;
+}
+
+.four.columns {
+    width: 33.3333%;
+}
+
+/* For mobile screens */
+@media (max-width: 767px) {
+    .columns {
+        width: 100%;
+    }
+    
+    #header-title {
+        font-size: 1.8em;
+    }
+    
+    #header-description {
+        font-size: 1em;
+    }
+    
+    .dash-tab {
+        padding: 10px 15px;
+    }
+}
+
+/* Graph container styles */
+.js-plotly-plot {
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+    border-radius: 5px;
+    background-color: white;
+}
+
+/* Dropdown styles */
+.Select-control {
+    border-radius: 4px;
+    border: 1px solid #ccc;
+}
+
+.Select-menu-outer {
+    border-radius: 0 0 4px 4px;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+}
+
+/* Metric displays */
+.metric-container {
+    background-color: white;
+    padding: 15px;
+    border-radius: 5px;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+    text-align: center;
+    margin-bottom: 20px;
+}
+
+.metric-value {
+    font-size: 2em;
+    font-weight: 700;
+    margin: 10px 0;
+}
+
+.metric-title {
+    font-size: 1.1em;
+    color: #666;
+    margin: 0;
+}
+
+.positive {
+    color: #28a745;
+}
+
+.negative {
+    color: #dc3545;
+}
+
+.neutral {
+    color: #007bff;
+} 

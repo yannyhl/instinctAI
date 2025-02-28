@@ -1,0 +1,113 @@
+/* User Profile Styles */
+
+.user-profile {
+    background-color: rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    padding: 12px 15px;
+    margin-bottom: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-family: 'Roboto', 'Segoe UI', Arial, sans-serif;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.user-profile-details {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+}
+
+.user-profile-details > div {
+    color: white;
+    font-size: 1rem;
+    margin-bottom: 5px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.logout-link {
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 0.85rem;
+    text-decoration: none;
+    transition: color 0.2s ease;
+    margin-top: 5px;
+    display: inline-block;
+}
+
+.logout-link:hover {
+    color: white;
+    text-decoration: underline;
+}
+
+/* Admin badge */
+.is-admin {
+    font-size: 0.75rem;
+    background-color: #dc3545;
+    color: white;
+    padding: 2px 5px;
+    border-radius: 3px;
+    margin-left: 5px;
+    vertical-align: middle;
+}
+
+/* Dark theme adjustments */
+[data-theme="dark"] .user-profile {
+    background-color: rgba(0, 0, 0, 0.2);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* Light theme adjustments */
+[data-theme="light"] .user-profile {
+    background-color: rgba(0, 0, 0, 0.05);
+    border: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+[data-theme="light"] .user-profile-details > div {
+    color: #333;
+}
+
+[data-theme="light"] .logout-link {
+    color: rgba(0, 0, 0, 0.7);
+}
+
+[data-theme="light"] .logout-link:hover {
+    color: #000;
+}
+
+/* Crypto theme adjustments */
+[data-theme="crypto"] .user-profile {
+    background: linear-gradient(135deg, rgba(247, 147, 26, 0.1), rgba(247, 147, 26, 0.05));
+    border: 1px solid rgba(247, 147, 26, 0.2);
+}
+
+[data-theme="crypto"] .logout-link {
+    color: #f7931a;
+}
+
+[data-theme="crypto"] .logout-link:hover {
+    color: #e67e00;
+}
+
+/* Responsive styles */
+@media (max-width: 768px) {
+    .user-profile {
+        padding: 8px 10px;
+    }
+    
+    .user-profile-details > div {
+        font-size: 0.9rem;
+    }
+}
+
+/* Animation for hover effect */
+.user-profile {
+    transition: all 0.3s ease;
+}
+
+.user-profile:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+} 
