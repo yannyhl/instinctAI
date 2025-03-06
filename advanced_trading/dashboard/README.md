@@ -1,128 +1,142 @@
-# Instinct AI Trading Dashboard
+# Unified Dashboard for Instinct AI Trading System
 
-A real-time monitoring dashboard for the Instinct AI trading system. This dashboard provides a comprehensive overview of market conditions, strategy performance, and risk metrics to inform trading decisions.
+The Unified Dashboard provides a comprehensive, single-operator interface for controlling and monitoring all aspects of the Instinct AI Trading System.
 
-## Features
+## Overview
 
-- **Market Overview**: Monitor real-time market prices, volume, and volatility
-- **Event Detection**: Automatically identify significant market events
-- **Strategy Performance**: Track strategy returns, drawdowns, and key metrics
-- **Risk Analysis**: Analyze risk metrics, correlations, and value-at-risk (VaR)
-- **Multi-asset Support**: Monitor multiple trading pairs simultaneously
+This dashboard is designed to be a command center for trading operations, integrating all system components into a cohesive interface that allows a single operator to manage the entire trading pipeline efficiently. It eliminates the need to switch between different interfaces or tools by providing a centralized control point for all trading activities.
 
-## Installation
+## Components
 
-The dashboard requires additional dependencies on top of the main Instinct AI system:
+The dashboard consists of the following main components:
 
-```
-pip install dash plotly pandas numpy
-```
+### Core Components
 
-For development, you may also want to install:
+- **Configuration (`DashboardConfig`)**: Manages dashboard settings, panel layouts, and user preferences
+- **State (`DashboardState`)**: Tracks the runtime state of the dashboard, including active executions, view selections, and notifications
+- **Controller (`DashboardController`)**: Coordinates operations between components and handles user interactions
 
-```
-pip install dash-dev-tools
-```
+### Panels
 
-## Usage
+The dashboard includes specialized panels for different aspects of the trading system:
 
-### Quick Start
+- **Strategy Management Panel**: Select, configure, and manage trading strategies
+- **Execution Panel**: Monitor and control active strategy executions
+- **Backtesting Panel**: Run and analyze strategy backtests
+- **Risk Management Panel**: Monitor risk metrics and set limits
+- **Performance Analytics Panel**: View performance metrics and analytics
+- **System Administration Panel**: Configure and monitor system settings
 
-The easiest way to run the dashboard is using the launcher script:
+## Architecture
 
-```
-python run_dashboard.py
-```
-
-This will start the dashboard on the default port (8050) and open it in your browser.
-
-### Command-line Options
-
-The dashboard launcher supports several options:
-
-```
-python run_dashboard.py --port 8080 --debug --no-browser
-```
-
-Options:
-- `--port PORT`: Specify the port to run the dashboard on (default: 8050)
-- `--debug`: Run in debug mode with hot reloading for development
-- `--no-browser`: Don't automatically open the browser
-
-### Running Directly
-
-You can also run the dashboard directly with:
-
-```
-python -m advanced_trading.dashboard.app
-```
-
-### Stopping the Dashboard
-
-To stop the dashboard, press `Ctrl+C` in the terminal where it's running.
-
-## Dashboard Sections
-
-### Market Overview
-
-This tab provides real-time market data and event detection:
-
-- Current price charts with candlestick visualization
-- Volume and volatility analysis
-- Detected market events with impact scores
-- Technical indicators
-
-### Strategy Performance
-
-This tab shows the performance of your trading strategies:
-
-- Key performance metrics (returns, Sharpe ratio, etc.)
-- Equity curve comparison with benchmark
-- Drawdown analysis
-- Rolling performance metrics
-
-### Risk Analysis
-
-This tab provides risk management information:
-
-- Risk metrics table (volatility, VaR, max drawdown)
-- Returns distribution and VaR visualization
-- Asset correlation matrix
-- Stress test scenarios
-
-## Development
-
-### Dashboard Structure
-
-The dashboard follows this structure:
+The Unified Dashboard follows a modular architecture:
 
 ```
 dashboard/
-├── app.py            # Main application
-├── assets/           # Static assets
-│   └── style.css     # CSS styles
-└── README.md         # Documentation
+├── core/               # Core dashboard framework
+│   ├── config.py       # Configuration management
+│   ├── state.py        # State tracking
+│   └── controller.py   # Central controller
+├── panels/             # Specialized dashboard panels
+├── views/              # Visualization components
+├── widgets/            # Reusable UI components
+└── examples/           # Example implementations
 ```
 
-### Extending the Dashboard
+The dashboard uses an event-driven architecture where components communicate through events registered with the central controller. This allows for loose coupling between components and easy extensibility.
 
-To add new features to the dashboard:
+## Key Features
 
-1. Add new components and callbacks in `app.py`
-2. Update styles in `assets/style.css`
-3. Implement data processing for new metrics
+- **Single Operator Design**: Optimized for a single user experience with intuitive controls
+- **Unified Interface**: Integrates all system components in one place
+- **Real-time Monitoring**: Live updates for executions, performance, and risk metrics
+- **Centralized Control**: Execute operations across different components from one interface
+- **Customizable Layout**: Configurable panel positions and sizes to suit operator preferences
+- **Advanced Notifications**: Multi-level notification system for system events
 
-## Troubleshooting
+## Usage
 
-If you encounter issues:
+### Basic Setup
 
-- Check that all dependencies are installed
-- Verify that the port is not already in use
-- Ensure the data refresher has access to market data
-- Check the logs for error messages
+```python
+from advanced_trading.dashboard.core import DashboardConfig, DashboardController
 
-For detailed error information, run in debug mode with:
+# Create and configure the dashboard
+config = DashboardConfig()
+config.dashboard_title = "Instinct AI Trading System"
 
+# Initialize the controller
+controller = DashboardController(config)
+
+# Register required data providers and services
+controller.register_data_provider("strategy", strategy_provider)
+controller.register_data_provider("execution", execution_provider)
+
+# Start the dashboard controller
+controller.start()
 ```
-python run_dashboard.py --debug
-``` 
+
+### Handling Executions
+
+```python
+# Start a new strategy execution
+execution_id = controller.add_execution(
+    strategy_id="moving_avg_crossover",
+    strategy_name="Moving Average Crossover",
+    symbol="AAPL",
+    timeframe="1h"
+)
+
+# Update execution status
+controller.update_execution_status(
+    execution_id=execution_id,
+    status="running",
+    progress=0.5
+)
+```
+
+### Working with Notifications
+
+```python
+# Add a notification
+controller.add_notification(
+    level="warning",
+    source="Risk Management",
+    message="Position size exceeds daily limit"
+)
+
+# Mark notifications as read
+controller.mark_all_notifications_read()
+```
+
+## Configuration Options
+
+The dashboard can be configured with various options:
+
+- **Themes**: Choose between dark, light, or high-contrast themes
+- **Layout Types**: Standard, grid, tabs, or compact layouts available
+- **Panel Settings**: Configure position, size, and refresh intervals for each panel
+- **Feature Flags**: Enable or disable specific dashboard features
+
+## For Developers
+
+When extending the dashboard:
+
+1. Use the event system to communicate between components
+2. Register new data providers with the controller
+3. Follow the panel interface for creating new panels
+4. Use the widget library for consistent UI elements
+
+## Examples
+
+The `examples` directory contains sample implementations that demonstrate how to use the dashboard:
+
+- `dashboard_example.py`: A complete example of setting up and using the dashboard
+
+## Future Enhancements
+
+- Integration with external notification systems
+- Customizable dashboard themes
+- Mobile-friendly responsive design
+- Advanced data visualization components
+- User preference profiles 

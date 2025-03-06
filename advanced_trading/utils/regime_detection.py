@@ -2,21 +2,49 @@
 Market Regime Detection Module
 ----------------------------
 Functionality for identifying market regimes to adapt trading strategies.
+
+This module provides tools for detecting market regimes (bull/bear/sideways markets,
+high/low volatility regimes, etc.) using various machine learning techniques.
 """
 
 import numpy as np
 import pandas as pd
 from typing import Dict, List, Tuple, Union, Optional, Any
 import logging
-from sklearn.cluster import KMeans
-from sklearn.mixture import GaussianMixture
-from sklearn.preprocessing import StandardScaler
 import matplotlib.pyplot as plt
-from hmmlearn import hmm
 import matplotlib.dates as mdates
+from enum import Enum
+from datetime import datetime
+
+# Import machine learning dependencies conditionally
+try:
+    from sklearn.cluster import KMeans
+    from sklearn.mixture import GaussianMixture
+    from sklearn.preprocessing import StandardScaler
+    SKLEARN_AVAILABLE = True
+except ImportError:
+    SKLEARN_AVAILABLE = False
+
+try:
+    from hmmlearn import hmm
+    HMM_AVAILABLE = True
+except ImportError:
+    HMM_AVAILABLE = False
 
 # Set up logging
 logger = logging.getLogger(__name__)
+
+class MarketRegime(Enum):
+    """Market regime classification."""
+    BEAR = 0
+    SIDEWAYS = 1
+    BULL = 2
+    HIGH_VOLATILITY = 3
+    LOW_VOLATILITY = 4
+    TREND_FOLLOWING = 5
+    MEAN_REVERTING = 6
+    RISK_ON = 7
+    RISK_OFF = 8
 
 class RegimeClassifier:
     """
@@ -26,6 +54,7 @@ class RegimeClassifier:
     - KMeans clustering
     - Gaussian Mixture Models (GMM)
     - Hidden Markov Models (HMM)
+    - Threshold-based classification
     """
     
     def __init__(self, method: str = 'hmm', n_regimes: int = 3, lookback_window: int = 60):
@@ -33,561 +62,456 @@ class RegimeClassifier:
         Initialize the regime classifier.
         
         Args:
-            method: Classification method ('kmeans', 'gmm', or 'hmm')
+            method: Classification method ('kmeans', 'gmm', 'hmm', or 'threshold')
             n_regimes: Number of regimes to identify
             lookback_window: Window size for feature calculation
         """
+        self._check_dependencies(method)
+            
         self.method = method.lower()
         self.n_regimes = n_regimes
         self.lookback_window = lookback_window
         self.model = None
-        self.scaler = StandardScaler()
+        self.scaler = StandardScaler() if SKLEARN_AVAILABLE else None
         self.feature_names = None
+        self.is_fitted = False
+        
+        # Default regime labels (can be customized)
         self.regime_labels = {
             0: "Bear Market",
             1: "Sideways/Neutral",
             2: "Bull Market"
         }
         
-        # Customize regime labels for more than 3 regimes
         if n_regimes > 3:
-            self.regime_labels = {i: f"Regime {i+1}" for i in range(n_regimes)}
-        
-        logger.info(f"Initialized {method} regime classifier with {n_regimes} regimes")
+            for i in range(3, n_regimes):
+                self.regime_labels[i] = f"Regime {i+1}"
     
-    def calculate_features(self, price_data: pd.DataFrame) -> pd.DataFrame:
+    def _check_dependencies(self, method: str):
+        """Check if required dependencies are available for the chosen method."""
+        if method in ['kmeans', 'gmm'] and not SKLEARN_AVAILABLE:
+            raise ImportError(f"Method '{method}' requires scikit-learn, which is not available")
+            
+        if method == 'hmm' and not HMM_AVAILABLE:
+            raise ImportError("Method 'hmm' requires hmmlearn, which is not available")
+    
+    def fit(self, price_data: pd.DataFrame) -> 'RegimeClassifier':
         """
-        Calculate features for regime classification from price data.
+        Fit the regime classifier to historical price data.
         
         Args:
-            price_data: DataFrame with OHLCV data
-            
+            price_data: DataFrame with price data (must include 'close', 'high', 'low', and 'volume')
+                        or at minimum just 'close' prices
+                        
         Returns:
-            DataFrame with extracted features
+            Self for method chaining
+            
+        Raises:
+            ValueError: If price_data doesn't contain required columns
         """
-        # Ensure we have enough data
-        if len(price_data) < self.lookback_window:
-            logger.warning(f"Not enough data for feature calculation. Need at least {self.lookback_window} points.")
-            return pd.DataFrame()
-        
-        # Calculate returns and volatility features
-        returns = price_data['close'].pct_change().fillna(0)
-        
-        features = pd.DataFrame(index=price_data.index)
-        
-        # Return over different timeframes
-        for window in [5, 10, 20, 40]:
-            if len(price_data) > window:
-                # Cumulative return over window
-                features[f'return_{window}d'] = returns.rolling(window=window).apply(
-                    lambda x: (1 + x).prod() - 1, raw=True
-                )
-        
-        # Volatility over different timeframes
-        for window in [10, 20, 40]:
-            if len(price_data) > window:
-                features[f'volatility_{window}d'] = returns.rolling(window=window).std() * np.sqrt(252)
-        
-        # Trend indicators
-        if len(price_data) > 50:
-            # Calculate moving averages
-            ma_20 = price_data['close'].rolling(window=20).mean()
-            ma_50 = price_data['close'].rolling(window=50).mean()
-            
-            # MA crossover indicator
-            features['ma_diff'] = (ma_20 / ma_50) - 1
-        
-        # Volume features
-        if 'volume' in price_data.columns:
-            volume = price_data['volume']
-            # Normalized volume
-            features['vol_change'] = volume.pct_change().rolling(window=10).mean()
-            
-            # Volume trend
-            features['vol_trend'] = (volume.rolling(window=10).mean() / 
-                                   volume.rolling(window=30).mean() - 1)
-        
-        # RSI indicator
-        delta = price_data['close'].diff()
-        gain = delta.where(delta > 0, 0).rolling(window=14).mean()
-        loss = -delta.where(delta < 0, 0).rolling(window=14).mean()
-        rs = gain / loss
-        features['rsi'] = 100 - (100 / (1 + rs))
-        
-        # Momentum
-        features['momentum'] = price_data['close'] / price_data['close'].shift(20) - 1
-        
-        # Drop rows with NaN due to lookback periods
-        features = features.dropna()
+        # Extract features for regime detection
+        features = self._extract_features(price_data)
         
         # Store feature names
         self.feature_names = features.columns.tolist()
         
-        return features
-    
-    def fit(self, price_data: pd.DataFrame) -> 'RegimeClassifier':
-        """
-        Fit the regime classification model.
-        
-        Args:
-            price_data: DataFrame with OHLCV data
-            
-        Returns:
-            Self for method chaining
-        """
-        # Calculate features
-        features_df = self.calculate_features(price_data)
-        
-        if features_df.empty:
-            logger.error("No features calculated. Cannot fit model.")
-            return self
-        
         # Scale features
-        X = features_df.values
-        X_scaled = self.scaler.fit_transform(X)
+        if SKLEARN_AVAILABLE:
+            scaled_features = self.scaler.fit_transform(features)
+        else:
+            # Simple z-score scaling if sklearn not available
+            scaled_features = (features - features.mean()) / features.std()
         
         # Fit the appropriate model
         if self.method == 'kmeans':
             self.model = KMeans(n_clusters=self.n_regimes, random_state=42)
-            self.model.fit(X_scaled)
-            logger.info(f"Fitted KMeans model with {self.n_regimes} clusters")
+            self.model.fit(scaled_features)
             
         elif self.method == 'gmm':
             self.model = GaussianMixture(n_components=self.n_regimes, random_state=42)
-            self.model.fit(X_scaled)
-            logger.info(f"Fitted GMM model with {self.n_regimes} components")
+            self.model.fit(scaled_features)
             
         elif self.method == 'hmm':
-            # HMM requires a different approach
-            # Use returns as the observed variable
-            returns = price_data['close'].pct_change().fillna(0).values.reshape(-1, 1)
+            # HMM requires special handling for time series
+            self.model = hmm.GaussianHMM(n_components=self.n_regimes, random_state=42)
+            self.model.fit(scaled_features)
             
-            # Scale returns
-            returns_scaled = self.scaler.fit_transform(returns)
-            
-            # Initialize and fit HMM
-            self.model = hmm.GaussianHMM(
-                n_components=self.n_regimes,
-                covariance_type="full",
-                n_iter=1000,
-                random_state=42
-            )
-            
-            self.model.fit(returns_scaled)
-            logger.info(f"Fitted HMM model with {self.n_regimes} hidden states")
+        elif self.method == 'threshold':
+            # Threshold-based methods don't need fitting
+            self.model = "threshold"
             
         else:
-            logger.error(f"Unknown method: {self.method}")
+            raise ValueError(f"Unknown method: {self.method}")
+        
+        self.is_fitted = True
+        logger.info(f"Fitted {self.method} regime classifier with {self.n_regimes} regimes")
         
         return self
     
-    def predict(self, price_data: pd.DataFrame) -> pd.Series:
+    def predict(self, price_data: pd.DataFrame) -> np.ndarray:
         """
         Predict regimes for the given price data.
         
         Args:
-            price_data: DataFrame with OHLCV data
+            price_data: DataFrame with price data
             
         Returns:
-            Series with regime predictions
-        """
-        if self.model is None:
-            logger.error("Model not fitted. Call fit() first.")
-            return pd.Series()
-        
-        # Calculate features
-        features_df = self.calculate_features(price_data)
-        
-        if features_df.empty:
-            logger.error("No features calculated. Cannot predict regimes.")
-            return pd.Series()
-        
-        # Make predictions based on the method
-        if self.method in ['kmeans', 'gmm']:
-            # Scale features
-            X = features_df.values
-            X_scaled = self.scaler.transform(X)
+            Array of regime labels
             
-            if self.method == 'kmeans':
-                regimes = self.model.predict(X_scaled)
-            else:  # gmm
-                regimes = self.model.predict(X_scaled)
+        Raises:
+            ValueError: If model is not fitted
+        """
+        if not self.is_fitted:
+            raise ValueError("Model is not fitted. Call fit() first.")
+            
+        # Extract features
+        features = self._extract_features(price_data)
+        
+        # Scale features
+        if SKLEARN_AVAILABLE:
+            scaled_features = self.scaler.transform(features)
+        else:
+            # Simple z-score scaling if sklearn not available
+            scaled_features = (features - features.mean()) / features.std()
+        
+        # Predict regimes based on method
+        if self.method == 'kmeans':
+            regimes = self.model.predict(scaled_features)
+            
+        elif self.method == 'gmm':
+            regimes = self.model.predict(scaled_features)
+            
+        elif self.method == 'hmm':
+            regimes = self.model.predict(scaled_features)
+            
+        elif self.method == 'threshold':
+            regimes = self._threshold_based_classification(features)
+            
+        else:
+            raise ValueError(f"Unknown method: {self.method}")
+            
+        return regimes
+    
+    def fit_predict(self, price_data: pd.DataFrame) -> np.ndarray:
+        """
+        Fit the classifier and predict regimes in one step.
+        
+        Args:
+            price_data: DataFrame with price data
+            
+        Returns:
+            Array of regime labels
+        """
+        self.fit(price_data)
+        return self.predict(price_data)
+    
+    def get_regime_probabilities(self, price_data: pd.DataFrame) -> pd.DataFrame:
+        """
+        Get the probability of each regime for the given price data.
+        Only available for GMM and HMM methods.
+        
+        Args:
+            price_data: DataFrame with price data
+            
+        Returns:
+            DataFrame with probabilities for each regime
+            
+        Raises:
+            ValueError: If method doesn't support probabilities
+        """
+        if not self.is_fitted:
+            raise ValueError("Model is not fitted. Call fit() first.")
+            
+        if self.method not in ['gmm', 'hmm']:
+            raise ValueError(f"Regime probabilities not available for method '{self.method}'")
+            
+        # Extract features
+        features = self._extract_features(price_data)
+        
+        # Scale features
+        if SKLEARN_AVAILABLE:
+            scaled_features = self.scaler.transform(features)
+        else:
+            # Simple z-score scaling if sklearn not available
+            scaled_features = (features - features.mean()) / features.std()
+        
+        # Get probabilities
+        if self.method == 'gmm':
+            probs = self.model.predict_proba(scaled_features)
+        else:  # hmm
+            probs = np.exp(self.model.score_samples(scaled_features)[1])
+            
+        # Create DataFrame with probabilities
+        regime_names = [self.regime_labels.get(i, f"Regime {i+1}") for i in range(self.n_regimes)]
+        return pd.DataFrame(probs, index=price_data.index, columns=regime_names)
+    
+    def get_regime_features(self) -> Dict[int, Dict[str, float]]:
+        """
+        Get the feature importance or characteristics of each regime.
+        
+        Returns:
+            Dictionary mapping regime indices to feature importance dictionaries
+            
+        Raises:
+            ValueError: If method doesn't support feature importance
+        """
+        if not self.is_fitted:
+            raise ValueError("Model is not fitted. Call fit() first.")
+            
+        result = {}
+        
+        if self.method == 'kmeans':
+            # For KMeans, we can use the cluster centers
+            for i in range(self.n_regimes):
+                center = self.model.cluster_centers_[i]
+                result[i] = dict(zip(self.feature_names, center))
+                
+        elif self.method == 'gmm':
+            # For GMM, we can use the means
+            for i in range(self.n_regimes):
+                mean = self.model.means_[i]
+                result[i] = dict(zip(self.feature_names, mean))
                 
         elif self.method == 'hmm':
-            # Use returns as the observed variable
-            returns = price_data['close'].pct_change().fillna(0).values.reshape(-1, 1)
-            
-            # Scale returns
-            returns_scaled = self.scaler.transform(returns)
-            
-            # Predict hidden states
-            regimes = self.model.predict(returns_scaled)
-        
-        # Create Series with predictions
-        regime_series = pd.Series(regimes, index=features_df.index)
-        
-        return regime_series
-    
-    def classify_regime(self, regime_idx: int) -> str:
-        """
-        Get the label for a regime.
-        
-        Args:
-            regime_idx: Regime index (0 to n_regimes-1)
-            
-        Returns:
-            String label for the regime
-        """
-        if regime_idx in self.regime_labels:
-            return self.regime_labels[regime_idx]
+            # For HMM, we can use the means of the emission distributions
+            for i in range(self.n_regimes):
+                mean = self.model.means_[i]
+                result[i] = dict(zip(self.feature_names, mean))
+                
         else:
-            return f"Regime {regime_idx+1}"
+            raise ValueError(f"Feature importance not available for method '{self.method}'")
+            
+        return result
     
-    def analyze_regimes(self, price_data: pd.DataFrame, regimes: pd.Series) -> Dict[int, Dict[str, float]]:
+    def plot_regimes(self, price_data: pd.DataFrame, regimes: Optional[np.ndarray] = None, 
+                    ax: Optional[plt.Axes] = None, figsize: Tuple[int, int] = (12, 6)) -> plt.Figure:
         """
-        Analyze the properties of each detected regime.
+        Plot price data with regime classifications.
         
         Args:
-            price_data: DataFrame with OHLCV data
-            regimes: Series with regime predictions
+            price_data: DataFrame with price data
+            regimes: Optional pre-computed regimes (will predict if None)
+            ax: Optional matplotlib axis to plot on
+            figsize: Figure size if creating a new figure
             
         Returns:
-            Dictionary of regime stats by regime index
+            Matplotlib figure
         """
-        # Calculate returns
-        returns = price_data['close'].pct_change().dropna()
-        
-        # Align returns with regimes
-        aligned_data = pd.DataFrame({
-            'returns': returns,
-            'regime': regimes
-        }).dropna()
-        
-        regime_stats = {}
-        
-        # Calculate statistics for each regime
-        for regime_idx in range(self.n_regimes):
-            regime_returns = aligned_data[aligned_data['regime'] == regime_idx]['returns']
+        if regimes is None:
+            regimes = self.predict(price_data)
             
-            if len(regime_returns) == 0:
+        # Create figure if needed
+        if ax is None:
+            fig, ax = plt.subplots(figsize=figsize)
+        else:
+            fig = ax.get_figure()
+            
+        # Plot price
+        price_data['close'].plot(ax=ax, color='black', alpha=0.5, label='Price')
+        
+        # Color background based on regimes
+        for regime in range(self.n_regimes):
+            mask = regimes == regime
+            if not any(mask):
                 continue
                 
-            # Calculate key statistics
-            stats = {
-                'count': len(regime_returns),
-                'mean_return': regime_returns.mean() * 100,  # as percentage
-                'volatility': regime_returns.std() * np.sqrt(252) * 100,  # annualized
-                'sharpe': (regime_returns.mean() / regime_returns.std()) * np.sqrt(252) if regime_returns.std() > 0 else 0,
-                'max_return': regime_returns.max() * 100,
-                'min_return': regime_returns.min() * 100,
-                'pct_positive': (regime_returns > 0).mean() * 100
-            }
+            # Get regime spans
+            spans = self._get_regime_spans(mask, price_data.index)
             
-            regime_stats[regime_idx] = stats
-        
-        return regime_stats
-    
-    def plot_regimes(self, price_data: pd.DataFrame, regimes: pd.Series) -> plt.Figure:
-        """
-        Plot price chart with colored regime backgrounds.
-        
-        Args:
-            price_data: DataFrame with OHLCV data
-            regimes: Series with regime predictions
-            
-        Returns:
-            Matplotlib figure
-        """
-        # Create figure
-        fig, ax = plt.subplots(figsize=(12, 6))
-        
-        # Plot price
-        ax.plot(price_data.index, price_data['close'], color='black', label='Price')
-        
-        # Color the background based on regimes
-        regime_colors = ['#ffcccc', '#ccffcc', '#ccccff', '#ffffcc', '#ffccff']
-        
-        # Get unique regimes in order
-        changes = np.diff(np.array(regimes), prepend=0)
-        regime_changes = np.where(changes != 0)[0]
-        
-        # Add the last point
-        if len(regime_changes) > 0:
-            if regime_changes[-1] != len(regimes) - 1:
-                regime_changes = np.append(regime_changes, len(regimes) - 1)
-        
-        # Fill regimes with colors
-        for i in range(len(regime_changes) - 1):
-            start_idx = regime_changes[i]
-            end_idx = regime_changes[i + 1]
-            
-            regime = regimes.iloc[start_idx]
-            color = regime_colors[regime % len(regime_colors)]
-            
-            ax.axvspan(regimes.index[start_idx], regimes.index[end_idx],
-                      alpha=0.3, color=color, 
-                      label=f'Regime {regime}' if i == 0 or regimes.iloc[start_idx] != regimes.iloc[regime_changes[i-1]] else "")
-        
-        # Add regime labels
-        handles, labels = ax.get_legend_handles_labels()
-        by_label = dict(zip(labels, handles))
-        ax.legend(by_label.values(), by_label.keys())
-        
-        # Format the x-axis to show dates nicely
-        ax.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d'))
-        ax.xaxis.set_major_locator(mdates.MonthLocator(interval=3))
-        plt.xticks(rotation=45)
-        
-        # Add title and labels
-        ax.set_title(f'Price Chart with {self.method.upper()} Detected Regimes')
+            # Color the background for this regime
+            for start, end in spans:
+                ax.axvspan(start, end, alpha=0.3, color=f'C{regime}', 
+                          label=self.regime_labels.get(regime, f"Regime {regime+1}") if start == spans[0][0] else "")
+                
+        # Clean up the plot
+        ax.set_title(f'Price with {self.method.upper()} Regime Classification')
         ax.set_xlabel('Date')
         ax.set_ylabel('Price')
+        ax.grid(True, alpha=0.3)
         
-        plt.tight_layout()
+        # Only show unique labels in the legend
+        handles, labels = ax.get_legend_handles_labels()
+        by_label = dict(zip(labels, handles))
+        ax.legend(by_label.values(), by_label.keys(), loc='best')
         
         return fig
     
-    def get_transition_matrix(self) -> np.ndarray:
+    def _extract_features(self, price_data: pd.DataFrame) -> pd.DataFrame:
         """
-        Get the regime transition probability matrix.
-        
-        Returns:
-            Transition probability matrix
-        """
-        if self.model is None:
-            logger.error("Model not fitted. Call fit() first.")
-            return np.array([])
-        
-        if self.method == 'hmm':
-            # HMM already has a transition matrix
-            return self.model.transmat_
-        else:
-            logger.warning(f"Transition matrix not directly available for {self.method}. Need to compute from data.")
-            return np.array([])
-    
-    def predict_next_regime(self, current_regime: int) -> Tuple[int, float]:
-        """
-        Predict the most likely next regime from the current regime.
+        Extract features from price data for regime detection.
         
         Args:
-            current_regime: Current regime index
+            price_data: DataFrame with price data
             
         Returns:
-            Tuple of (most_likely_next_regime, probability)
+            DataFrame with extracted features
         """
-        if self.model is None or self.method != 'hmm':
-            logger.error("Next regime prediction only available for HMM.")
-            return (-1, 0.0)
-        
-        # Get transition probabilities for current state
-        trans_probs = self.model.transmat_[current_regime]
-        
-        # Find most likely next regime
-        next_regime = np.argmax(trans_probs)
-        probability = trans_probs[next_regime]
-        
-        return next_regime, probability
-    
-    def plot_regime_distributions(self, price_data: pd.DataFrame, regimes: pd.Series) -> plt.Figure:
-        """
-        Plot return distributions for each regime.
-        
-        Args:
-            price_data: DataFrame with OHLCV data
-            regimes: Series with regime predictions
+        # Ensure we have at least close prices
+        if 'close' not in price_data.columns:
+            raise ValueError("Price data must contain at least 'close' column")
             
-        Returns:
-            Matplotlib figure
-        """
+        # Create a copy to avoid modifying the original
+        df = price_data.copy()
+        
         # Calculate returns
-        returns = price_data['close'].pct_change().dropna() * 100  # Convert to percentage
+        df['returns'] = df['close'].pct_change()
         
-        # Align returns with regimes
-        aligned_data = pd.DataFrame({
-            'returns': returns,
-            'regime': regimes
-        }).dropna()
+        # Start with basic features
+        features = pd.DataFrame(index=df.index)
         
-        # Create figure
-        fig, axes = plt.subplots(1, self.n_regimes, figsize=(15, 5))
+        # Rolling features with the lookback window
+        window = self.lookback_window
         
-        # Plot histogram for each regime
-        for i in range(self.n_regimes):
-            ax = axes[i] if self.n_regimes > 1 else axes
+        # Trend features
+        features['trend'] = df['close'].pct_change(window)
+        features['trend_strength'] = self._calculate_trend_strength(df['close'], window)
+        
+        # Volatility features
+        features['volatility'] = df['returns'].rolling(window).std() * np.sqrt(252)
+        
+        # Volume features (if available)
+        if 'volume' in df.columns:
+            features['volume_trend'] = df['volume'].pct_change(window)
+            features['volume_intensity'] = df['volume'] / df['volume'].rolling(window).mean()
+        
+        # Range features (if available)
+        if 'high' in df.columns and 'low' in df.columns:
+            df['range'] = (df['high'] - df['low']) / df['close']
+            features['range_expansion'] = df['range'].rolling(window).mean()
+        
+        # Clean up NaN values from rolling calculations
+        features = features.dropna()
+        
+        return features
+    
+    def _calculate_trend_strength(self, prices: pd.Series, window: int) -> pd.Series:
+        """
+        Calculate the strength of a trend using R-squared of linear fit.
+        
+        Args:
+            prices: Series of prices
+            window: Window size for calculation
             
-            regime_returns = aligned_data[aligned_data['regime'] == i]['returns']
+        Returns:
+            Series of trend strength values
+        """
+        trend_strength = pd.Series(index=prices.index, dtype=float)
+        
+        for i in range(window, len(prices)):
+            # Get the price window
+            window_prices = prices.iloc[i-window:i]
             
-            if len(regime_returns) > 0:
-                ax.hist(regime_returns, bins=20, alpha=0.7)
-                ax.axvline(0, color='r', linestyle='--')
-                ax.axvline(regime_returns.mean(), color='g', linestyle='-')
+            # Create X array (time points)
+            x = np.arange(window)
+            
+            # Calculate linear regression
+            slope, intercept = np.polyfit(x, window_prices, 1)
+            
+            # Calculate R-squared
+            y_pred = intercept + slope * x
+            ss_total = np.sum((window_prices - window_prices.mean()) ** 2)
+            ss_residual = np.sum((window_prices - y_pred) ** 2)
+            r_squared = 1 - (ss_residual / ss_total)
+            
+            # Store the result
+            trend_strength.iloc[i] = r_squared * np.sign(slope)
+            
+        return trend_strength
+    
+    def _threshold_based_classification(self, features: pd.DataFrame) -> np.ndarray:
+        """
+        Classify regimes using threshold-based rules.
+        
+        Args:
+            features: DataFrame with extracted features
+            
+        Returns:
+            Array of regime labels
+        """
+        regimes = np.zeros(len(features), dtype=int)
+        
+        # Simple classification based on trend and volatility
+        trend = features['trend'].values
+        volatility = features['volatility'].values
+        
+        # Regime 0: Bear Market (negative trend)
+        regimes[trend < -0.05] = 0
+        
+        # Regime 1: Sideways Market (low absolute trend)
+        regimes[np.abs(trend) <= 0.05] = 1
+        
+        # Regime 2: Bull Market (positive trend)
+        regimes[trend > 0.05] = 2
+        
+        # Could add more regimes based on volatility, etc.
+        if self.n_regimes > 3:
+            # Regime 3: High Volatility
+            high_vol_threshold = np.percentile(volatility, 80)
+            regimes[volatility > high_vol_threshold] = 3
+        
+        return regimes
+    
+    def _get_regime_spans(self, mask: np.ndarray, index: pd.DatetimeIndex) -> List[Tuple[pd.Timestamp, pd.Timestamp]]:
+        """
+        Get spans (start, end) for each continuous regime period.
+        
+        Args:
+            mask: Boolean mask for a specific regime
+            index: DatetimeIndex of the data
+            
+        Returns:
+            List of (start, end) tuples for each span
+        """
+        if not any(mask):
+            return []
+            
+        # Convert mask to numerical
+        mask_int = mask.astype(int)
+        
+        # Find transitions
+        transitions = np.diff(mask_int)
+        transition_indices = np.where(transitions != 0)[0]
+        
+        # Add start and end if needed
+        if mask[0]:
+            transition_indices = np.r_[-1, transition_indices]
+        if mask[-1]:
+            transition_indices = np.r_[transition_indices, len(mask) - 1]
+            
+        # Create spans
+        spans = []
+        for i in range(0, len(transition_indices), 2):
+            if i + 1 >= len(transition_indices):
+                break
                 
-                ax.set_title(f'Regime {i}: {self.classify_regime(i)}')
-                ax.set_xlabel('Daily Return (%)')
-                ax.text(0.05, 0.95, f"Mean: {regime_returns.mean():.2f}%\nStd: {regime_returns.std():.2f}%",
-                       transform=ax.transAxes, verticalalignment='top')
-            else:
-                ax.text(0.5, 0.5, f'No data for Regime {i}', 
-                      ha='center', va='center', transform=ax.transAxes)
-        
-        plt.tight_layout()
-        
-        return fig
-
-
-def detect_regime(returns: pd.Series, method: str = 'hmm', n_regimes: int = 3) -> int:
-    """
-    Simple function to detect the current market regime from a series of returns.
-    
-    Args:
-        returns: Series of asset returns
-        method: Detection method ('hmm', 'kmeans', 'volatility')
-        n_regimes: Number of regimes to identify
-        
-    Returns:
-        Integer representing the current regime
-    """
-    # Require at least 60 data points
-    if len(returns) < 60:
-        logger.warning("Not enough data for regime detection")
-        return -1
-    
-    if method == 'volatility':
-        # Simple volatility-based regime detection
-        recent_vol = returns[-30:].std() * np.sqrt(252)
-        
-        if recent_vol > 0.4:  # Over 40% annualized vol
-            return 0  # High volatility regime
-        elif recent_vol > 0.2:  # 20-40% annualized vol
-            return 1  # Medium volatility regime
-        else:
-            return 2  # Low volatility regime
+            start_idx = transition_indices[i] + 1
+            end_idx = transition_indices[i + 1]
             
-    else:
-        # Use the full classifier
-        classifier = RegimeClassifier(method=method, n_regimes=n_regimes)
-        
-        # Create a dummy price series from returns
-        price = (1 + returns).cumprod() * 100
-        ohlc = pd.DataFrame({
-            'open': price,
-            'high': price,
-            'low': price,
-            'close': price
-        }, index=returns.index)
-        
-        # Fit and predict
-        classifier.fit(ohlc)
-        regimes = classifier.predict(ohlc)
-        
-        if len(regimes) > 0:
-            return regimes.iloc[-1]
-        else:
-            return -1
+            if start_idx < 0:
+                start_idx = 0
+                
+            if start_idx < len(index) and end_idx < len(index):
+                spans.append((index[start_idx], index[end_idx]))
+                
+        return spans
 
 
-def analyze_regime_transitions(regimes: pd.Series) -> pd.DataFrame:
+def detect_regime(price_data: pd.DataFrame, method: str = 'hmm', n_regimes: int = 3, 
+                lookback_window: int = 60) -> np.ndarray:
     """
-    Analyze transitions between regimes to identify stable and unstable periods.
+    Detect market regimes using the specified method.
+    
+    This is a convenience function that creates a RegimeClassifier,
+    fits it to the data, and returns the regime classifications.
     
     Args:
-        regimes: Series with regime predictions
+        price_data: DataFrame with price data
+        method: Classification method ('kmeans', 'gmm', 'hmm', or 'threshold')
+        n_regimes: Number of regimes to identify
+        lookback_window: Window size for feature calculation
         
     Returns:
-        DataFrame with regime transition statistics
+        Array of regime labels
     """
-    # Create shift to identify transitions
-    transitions = pd.DataFrame({
-        'regime': regimes,
-        'next_regime': regimes.shift(-1)
-    }).dropna()
-    
-    # Count transitions
-    transition_counts = pd.crosstab(
-        transitions['regime'], 
-        transitions['next_regime'], 
-        rownames=['From'], 
-        colnames=['To']
-    )
-    
-    # Convert to probabilities
-    transition_probs = transition_counts.div(transition_counts.sum(axis=1), axis=0)
-    
-    return transition_probs
-
-
-def identify_regime_change_points(regimes: pd.Series) -> pd.DatetimeIndex:
-    """
-    Identify points where the market regime changes.
-    
-    Args:
-        regimes: Series with regime predictions
-        
-    Returns:
-        DatetimeIndex with regime change points
-    """
-    # Find where regime changes
-    regime_changes = regimes.diff().fillna(0) != 0
-    
-    # Get indices where changes occur
-    change_points = regimes.index[regime_changes]
-    
-    return change_points
-
-
-def get_regime_duration_stats(regimes: pd.Series) -> pd.DataFrame:
-    """
-    Calculate statistics about how long each regime typically lasts.
-    
-    Args:
-        regimes: Series with regime predictions
-        
-    Returns:
-        DataFrame with duration statistics for each regime
-    """
-    # Find regime change points
-    change_points = identify_regime_change_points(regimes)
-    
-    # Add the end of the series as a final change point
-    all_points = change_points.tolist() + [regimes.index[-1]]
-    
-    # Calculate duration of each regime segment
-    durations = []
-    regimes_list = []
-    
-    for i in range(len(all_points) - 1):
-        start_date = all_points[i]
-        end_date = all_points[i + 1]
-        
-        # Get the regime for this segment
-        if i == 0 and len(change_points) > 0:
-            # For first segment, get regime at the start
-            regime = regimes.loc[:change_points[0]].iloc[0]
-        else:
-            # For other segments, get regime after the change
-            regime = regimes.loc[start_date]
-        
-        # Calculate duration in days
-        duration = (end_date - start_date).days
-        
-        durations.append(duration)
-        regimes_list.append(regime)
-    
-    # Create DataFrame
-    duration_df = pd.DataFrame({
-        'regime': regimes_list,
-        'duration': durations
-    })
-    
-    # Group by regime and calculate statistics
-    stats = duration_df.groupby('regime')['duration'].agg(
-        ['count', 'mean', 'min', 'max', 'std']
-    ).rename(columns={
-        'count': 'num_occurrences',
-        'mean': 'avg_duration_days',
-        'min': 'min_duration_days',
-        'max': 'max_duration_days',
-        'std': 'std_duration_days'
-    })
-    
-    return stats 
+    classifier = RegimeClassifier(method=method, n_regimes=n_regimes, lookback_window=lookback_window)
+    return classifier.fit_predict(price_data) 

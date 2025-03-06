@@ -1,0 +1,324 @@
+### PART II-F: PERFORMANCE OPTIMIZATION (NEW SECTION)
+
+## F1. Critical Path Optimization
+
+**Priority: High**  
+**Dependencies:** A3. End-to-End Observability System  
+**Estimated Effort:** 2-3 weeks  
+**Status: 🔴 Not Started**
+
+#### Current Limitations
+
+While the system contains sophisticated algorithms, critical execution paths are not optimized for maximum performance:
+
+- Python GIL limitations affect concurrent order book processing
+- High-frequency updates create garbage collection pauses
+- Key numerical operations use general-purpose structures rather than optimized libraries
+- Inefficient memory usage patterns in data-intensive components
+- Limited use of batch processing capabilities
+
+#### Enhancement Plan
+
+1. **Critical Path Profiling**
+   - Identify performance bottlenecks through comprehensive profiling
+   - Map memory usage patterns and allocation hotspots
+   - Measure request latency distributions and identify outliers
+   - Create performance benchmarks for key operations
+
+2. **Latency-Critical Component Optimization**
+   - Create Cython/C++ extensions for orderbook processing
+   - Implement zero-copy data structures for market data processing
+   - Optimize numerical operations with vectorized Numpy operations
+   - Implement object pooling for frequently created/destroyed objects
+
+3. **Concurrency Improvements**
+   - Refactor GIL-bound operations to parallel processes
+   - Implement lock-free data structures for inter-process communication
+   - Create optimized thread/process pools for specific workloads
+   - Implement asynchronous execution for I/O-bound operations
+
+4. **Memory Optimization**
+   - Implement custom memory pools for frequently allocated structures
+   - Reduce object creation in hot paths
+   - Use pre-allocated arrays and efficient slicing operations
+   - Implement data compression for historical data access
+
+#### Expected Impact
+
+- 40-60% reduction in order execution latency
+- Improved throughput for market data processing
+- Reduced memory consumption during peak operations
+- Lower CPU utilization for the same workload
+- Enhanced capacity for processing multiple symbols
+- More consistent performance under high load conditions
+
+#### Implementation Steps
+
+1. **Profiling Infrastructure (Week 1)**
+   - Set up comprehensive profiling tools
+   - Create baseline performance measurements
+   - Identify top 3-5 performance bottlenecks
+
+2. **Core Optimizations (Weeks 1-2)**
+   - Optimize OrderBookAnalyzer for maximum performance
+   - Create Cython extensions for critical calculation paths
+   - Implement optimized data structures for market data
+
+3. **Concurrency Framework (Week 2)**
+   - Implement process-based parallelism for CPU-intensive tasks
+   - Create shared memory structures for efficient data exchange
+   - Optimize thread pools and worker management
+
+4. **Memory Optimizations (Week 3)**
+   - Implement object pools for frequent allocations
+   - Optimize data structures to reduce memory fragmentation
+   - Create more efficient caching mechanisms
+
+5. **Performance Testing (Week 3)**
+   - Benchmark optimized components against baseline
+   - Test under various load conditions
+   - Verify correctness under high-stress scenarios
+
+#### Success Metrics
+
+- Order book processing latency <500 microseconds
+- Order routing decision latency <1 millisecond
+- Market data processing throughput >1000 updates/second/symbol
+- 95th percentile GC pause times <10ms
+- Memory growth <10% under sustained load
+- CPU utilization reduction of 30%+ for same workload
+
+## F2. Alternative Data Integration Framework
+
+**Priority: Medium**  
+**Dependencies:** B1. Multi-Level Data Architecture  
+**Estimated Effort:** 3-4 weeks  
+**Status: 🔴 Not Started**
+
+#### Current Limitations
+
+The system primarily relies on market data without significant integration of alternative data sources:
+
+- Limited visibility into on-chain transaction flows
+- No systematic integration of social sentiment data
+- Missing wallet analysis for large holder movements
+- Limited perspective on exchange liquidity shifts
+- No fundamental metrics integration for market context
+
+#### Enhancement Plan
+
+Create a flexible framework for integrating and normalizing alternative data:
+
+1. **On-Chain Data Integration**
+   - Connect to blockchain data providers (Glassnode, Dune Analytics)
+   - Track exchange inflows/outflows
+   - Monitor large wallet transactions
+   - Calculate network usage metrics
+   - Implement mempool monitoring for pending transactions
+
+2. **Social Sentiment Analysis**
+   - Create connectors for social media data sources
+   - Implement NLP processing for sentiment extraction
+   - Develop custom sentiment indicators for trading assets
+   - Create real-time alert system for abnormal sentiment shifts
+
+3. **Exchange Reserve Monitoring**
+   - Track exchange wallet balances
+   - Monitor liquidity shifts between exchanges
+   - Detect unusual reserve movements
+   - Create liquidity migration indicators
+
+4. **Alternative Data Normalization Pipeline**
+   - Create standardized data schemas for diverse sources
+   - Implement data quality verification
+   - Build feature extraction pipeline for ML model inputs
+   - Develop visualization tools for alternative data metrics
+
+#### Expected Impact
+
+- Earlier detection of significant market moves (1-4 hours)
+- Improved context for determining market regimes
+- Additional alpha signals orthogonal to price-based strategies
+- Enhanced risk management through early warning indicators
+- Better understanding of market participant behavior
+- New strategy opportunities based on alternative data signals
+
+#### Integration Points
+
+- Data Management System: For normalized data storage
+- ML Strategy Framework: For incorporating alternative data features
+- Risk Management: For early warning indicators
+- Dashboard: For visualization of alternative data insights
+
+## F3. Strategy Orthogonality Framework
+
+**Priority: Medium-High**  
+**Dependencies:** D3. Strategy Correlation Management, E1. Integrated Risk Management Framework  
+**Estimated Effort:** 2-3 weeks  
+**Status: 🔴 Not Started**
+
+#### Current Limitations
+
+While multiple strategies exist, there's limited framework for ensuring true orthogonality:
+
+- Strategies may exhibit correlation during market stress
+- No systematic measurement of strategy correlation across regimes
+- Limited diversification across timeframes and signal types
+- Insufficient mechanisms for adaptive allocation based on correlation
+- No formal cataloging of strategy properties for selection
+
+#### Enhancement Plan
+
+1. **Strategy Classification Framework**
+   - Create a taxonomy of strategy properties (timeframe, signal type, market conditions)
+   - Develop a systematic catalog of all strategies with properties
+   - Implement strategy metadata tagging for automated analysis
+   - Create tools for analyzing strategy coverage across property space
+
+2. **Dynamic Correlation Analysis**
+   - Implement regime-conditional correlation measurement
+   - Create rolling correlation analysis with time-varying windows
+   - Develop stress-period correlation analytics
+   - Build visualization tools for correlation dynamics
+
+3. **Orthogonality Optimization**
+   - Create portfolio construction tools that maximize strategy orthogonality
+   - Implement adaptive weightings based on observed correlations
+   - Develop correlation-aware strategy selection mechanisms
+   - Build simulation tools for testing orthogonality under different scenarios
+
+4. **Orthogonal Strategy Templates**
+   - Develop template strategies for different market regimes
+   - Create counter-trend strategies to balance momentum approaches
+   - Implement volatility-based strategies uncorrelated with directional approaches
+   - Build mean-reversion strategies at multiple timeframes
+
+#### Expected Impact
+
+- Significant reduction in portfolio volatility (20-30%)
+- More consistent returns across market conditions
+- Reduced drawdowns during market stress periods
+- Improved Sharpe ratio through genuine diversification
+- More efficient capital allocation across strategies
+- Reduced correlation with broader crypto market
+
+#### Implementation Steps
+
+1. **Strategy Cataloging (Week 1)**
+   - Create strategy property taxonomy
+   - Catalog all existing strategies
+   - Identify gaps in coverage
+
+2. **Correlation Analysis Tools (Week 1-2)**
+   - Implement dynamic correlation analysis
+   - Create visualization tools for correlation patterns
+   - Develop regime-conditional correlation measurement
+
+3. **Portfolio Construction (Week 2-3)**
+   - Implement orthogonality-optimizing allocation algorithms
+   - Create backtesting tools for orthogonal portfolios
+   - Develop adaptive weighting mechanisms
+
+4. **Strategy Development (Week 3+)**
+   - Develop template strategies for underrepresented properties
+   - Create complementary strategies to existing approaches
+   - Implement counter-strategy pairs
+
+#### Success Metrics
+
+- Average strategy correlation below 0.3 in normal markets
+- Maximum strategy correlation below 0.6 in stress periods
+- Portfolio drawdown reduction of 25%+ compared to non-optimized allocation
+- Sharpe ratio improvement of 30%+ through orthogonality
+- Strategy coverage across at least 5 distinct property categories
+- Reduced beta to overall crypto market
+
+### PART III-D: OPERATIONAL EFFICIENCY (NEW SECTION)
+
+## D1. Unified Dashboard Control Center
+
+**Priority: Medium**  
+**Dependencies:** A3. End-to-End Observability System  
+**Estimated Effort:** 3-4 weeks  
+**Status: 🔴 Not Started**
+
+#### Current Limitations
+
+While dashboard components exist, they don't provide a unified control center:
+
+- Separate interfaces for different system aspects
+- Limited operational controls from dashboard
+- No single consolidated view of system health
+- Manual operations required for many tasks
+- Limited visualization of cross-component interactions
+
+#### Enhancement Plan
+
+Create a unified dashboard that serves as a control center for the entire system:
+
+1. **Consolidated System Overview**
+   - Single-view system health dashboard
+   - Real-time performance metrics across components
+   - Integrated alerts and notifications
+   - Cross-component dependency visualization
+
+2. **Operational Controls**
+   - Strategy activation/deactivation controls
+   - Parameter adjustment interface
+   - Risk limit management
+   - Exchange connectivity controls
+   - System component restart capabilities
+
+3. **Performance Analytics**
+   - Real-time P&L by strategy and overall
+   - Execution quality metrics
+   - Risk allocation visualization
+   - Position monitoring with drill-down capability
+   - Historical performance analytics
+
+4. **Decision Support Tools**
+   - Market regime indicators
+   - Strategy recommendation engine
+   - Risk exposure visualization
+   - Scenario analysis tools
+   - What-if analysis interface
+
+#### Expected Impact
+
+- Significantly reduced operational overhead (50%+ time savings)
+- Faster response to market conditions and opportunities
+- Improved visibility into system performance
+- Reduced operational errors through automation
+- Enhanced ability for a single operator to manage the system
+- Better tracking of system behavior over time
+
+#### Implementation Steps
+
+1. **Dashboard Core Framework (Week 1)**
+   - Create unified data access layer
+   - Design modular dashboard architecture
+   - Implement core visualization components
+
+2. **Operational Controls (Week 2)**
+   - Implement strategy management interface
+   - Create parameter adjustment tools
+   - Build system control capabilities
+
+3. **Analytics Integration (Week 3)**
+   - Create performance visualization components
+   - Implement real-time analytics dashboard
+   - Build historical performance comparison tools
+
+4. **Decision Support (Week 4)**
+   - Implement regime detection visualization
+   - Create strategy recommendation engine
+   - Build risk visualization tools
+
+#### Success Metrics
+
+- 90%+ of daily operations executable through dashboard
+- 50%+ reduction in time spent on routine operations
+- Complete system visibility within 3 clicks from main view
+- Real-time updates for all critical metrics
+- Support for all major operational decisions
+- Accessible from both desktop and mobile devices

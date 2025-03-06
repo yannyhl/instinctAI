@@ -1,0 +1,39 @@
+   advanced_trading/
+   ├── core/                     # Core system components
+   │   ├── config/               # Configuration management
+   │   ├── observability/        # Metrics, logging, tracing
+   │   └── common/               # Shared utilities
+   ├── data/                     # All data-related components
+   │   ├── sources/              # Data acquisition
+   │   ├── processing/           # Data transformation
+   │   ├── storage/              # Data persistence
+   │   └── alternative/          # Alternative data integration
+   ├── analysis/                 # Market and performance analysis
+   │   ├── market_microstructure/
+   │   ├── technical/            # Technical indicators
+   │   └── fundamental/          # Fundamental analysis
+   ├── execution/                # Order execution
+   │   ├── exchange/             # Exchange connectivity
+   │   ├── optimization/         # Execution optimization
+   │   └── monitoring/           # Execution analytics
+   ├── strategies/               # Trading strategies
+   │   ├── statistical/          # Statistical strategies
+   │   ├── arbitrage/            # Arbitrage strategies
+   │   ├── ml/                   # ML-based strategies
+   │   └── factory/              # Strategy creation patterns
+   ├── risk/                     # Risk management
+   │   ├── portfolio/            # Portfolio risk
+   │   ├── position/             # Position risk
+   │   └── market/               # Market risk
+   ├── backtesting/              # Backtesting framework
+   │   ├── engine/               # Core backtesting engine
+   │   ├── analysis/             # Performance analysis
+   │   └── optimization/         # Strategy optimization
+   ├── api/                      # External APIs
+   │   ├── rest/                 # REST API implementation
+   │   └── websocket/            # WebSocket API
+   ├── dashboard/                # User interface
+   │   ├── views/                # Dashboard views
+   │   ├── components/           # Reusable UI components
+   │   └── services/             # Backend services for UI
+   └── tools/                    # Command-line tools

@@ -7,7 +7,7 @@ This module serves as the core of the ML ensemble framework, providing:
 2. Various ensemble methods (stacking, bagging, boosting)
 3. Regime-specific model selection and weighting
 4. Feature importance analysis across different market conditions
-5. Integration with the AdaptiveMetaStrategy
+5. Integration with adaptive strategy frameworks
 """
 
 import numpy as np
@@ -146,8 +146,6 @@ class EnsembleManager:
                             model.fit(regime_X, regime_y, sample_weight=regime_weights)
                         else:
                             model.fit(regime_X, regime_y)
-                    else:
-                        model.fit(regime_X, regime_y)
                     
                     # Extract and store feature importance if available
                     self._extract_feature_importance(model, regime)
@@ -432,7 +430,14 @@ class EnsembleManager:
             self.meta_model.fit(meta_features, y)
 
     def save(self, filepath: str) -> None:
-        """Save the ensemble model to disk"""
+        """
+        Save the ensemble model to disk
+        
+        Parameters:
+        -----------
+        filepath : str
+            Path to save the model to
+        """
         save_path = Path(filepath)
         save_path.parent.mkdir(parents=True, exist_ok=True)
         
@@ -454,7 +459,19 @@ class EnsembleManager:
 
     @classmethod
     def load(cls, filepath: str) -> 'EnsembleManager':
-        """Load the ensemble model from disk"""
+        """
+        Load the ensemble model from disk
+        
+        Parameters:
+        -----------
+        filepath : str
+            Path to load the model from
+            
+        Returns:
+        --------
+        EnsembleManager
+            Loaded ensemble model
+        """
         data = joblib.load(filepath)
         
         # Create instance with base initialization

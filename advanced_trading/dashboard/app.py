@@ -1,1234 +1,665 @@
 """
-Instinct AI Trading Dashboard
-----------------------------
-A comprehensive dashboard for monitoring cryptocurrency markets and trading strategies.
+Dashboard Application
+
+This module provides the main application for the trading dashboard.
 """
 
 import os
 import sys
-from pathlib import Path
-import pandas as pd
-import numpy as np
-from datetime import datetime, timedelta
 import json
-import time
-import threading
-import dash
-from dash import html, dcc, callback, Input, Output, dash_table, ctx
-import plotly.graph_objects as go
-from plotly.subplots import make_subplots
-import traceback
 import logging
+import threading
+import time
+import atexit
+from typing import Dict, Any, List, Optional
+from datetime import datetime
 
-# Add parent directory to path
-script_dir = Path(__file__).resolve().parent.parent
-sys.path.append(str(script_dir))
+import dash
+from dash import dcc, html, callback, Output, Input, State
+import dash_bootstrap_components as dbc
+from flask import Flask
 
-# Import project modules
-import config
-from dashboard.market_data_handler import get_market_data_handler
-from utils.market_monitor import get_market_monitor
+# Add the parent directory to sys.path
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-# Set up logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
+# Import core modules
+from core import config_manager, metrics, logging as log_manager, tracing
 
-# Initialize the data handler
-data_handler = get_market_data_handler()
+# Import dashboard modules
+from dashboard.config import get_dashboard_config, get_view_config
 
-# Initialize the app
-app = dash.Dash(
-    __name__,
-    title="Instinct AI Trading Dashboard",
-    meta_tags=[{"name": "viewport", "content": "width=device-width, initial-scale=1"}],
-    suppress_callback_exceptions=True
-)
+# Import components
+from dashboard.components.nav_bar import create_navbar
+from dashboard.components.status_card import create_status_card, create_metric_card
+from dashboard.components.performance_card import create_performance_card, create_value_card
+from dashboard.components.control_panel import create_control_panel
 
-# Define layout
-app.layout = html.Div([
-    # Header
-    html.Div([
-        html.H1("Instinct AI Trading Dashboard", style={"margin-bottom": "0px"}),
-        html.P("Real-time market monitor and trading strategy insights", style={"margin-top": "0px"}),
-        html.Div(id="last-update-time", style={"font-style": "italic", "font-size": "0.8em"}),
-    ], style={"text-align": "center", "margin-bottom": "20px"}),
-    
-    # Market Overview Section
-    html.Div([
-        html.H2("Market Overview"),
-        
-        # Symbol selector
-        html.Div([
-            html.Label("Symbol:"),
-            dcc.Dropdown(
-                id="symbol-selector",
-                options=[
-                    {"label": symbol, "value": symbol}
-                    for symbol in config.TRADING_CONFIG['symbols']
-                ],
-                value=config.TRADING_CONFIG['symbols'][0] if config.TRADING_CONFIG['symbols'] else None,
-                clearable=False,
-                style={"width": "200px"}
-            ),
-        ], style={"margin-bottom": "15px"}),
-        
-        # Timeframe selector
-        html.Div([
-            html.Label("Timeframe:"),
-            dcc.Dropdown(
-                id="timeframe-selector",
-                options=[
-                    {"label": "1 minute", "value": "1m"},
-                    {"label": "5 minutes", "value": "5m"},
-                    {"label": "15 minutes", "value": "15m"},
-                    {"label": "1 hour", "value": "1h"},
-                    {"label": "4 hours", "value": "4h"},
-                    {"label": "1 day", "value": "1d"},
-                ],
-                value="1h",
-                clearable=False,
-                style={"width": "200px"}
-            ),
-        ], style={"margin-bottom": "15px"}),
-        
-        # Price chart
-        html.Div([
-            dcc.Graph(id="price-chart", style={"height": "500px"})
-        ], style={"margin-bottom": "20px"}),
-        
-        # Market summary cards
-        html.Div([
-            html.Div(id="market-summary-cards", className="row"),
-        ], style={"margin-bottom": "20px"})
-    ], style={"margin-bottom": "30px"}),
-    
-    # Volume Profile and Regime Analysis
-    html.Div([
-        html.Div([
-            html.H3("Volume Profile"),
-            dcc.Graph(id="volume-profile-chart", style={"height": "300px"})
-        ], className="six columns", style={"width": "48%", "display": "inline-block"}),
-        
-        html.Div([
-            html.H3("Regime Distribution"),
-            dcc.Graph(id="regime-distribution-chart", style={"height": "300px"})
-        ], className="six columns", style={"width": "48%", "display": "inline-block", "float": "right"})
-    ], className="row", style={"margin-bottom": "20px"}),
-    
-    # Strategy Performance Section
-    html.Div([
-        html.H2("Strategy Performance"),
-        
-        # Performance metrics table
-        html.Div([
-            html.H3("Performance Metrics"),
-            html.Div(id="performance-metrics-table")
-        ], style={"margin-bottom": "20px"}),
-        
-        # Performance chart
-        html.Div([
-            dcc.Graph(id="performance-chart", style={"height": "400px"})
-        ], style={"margin-bottom": "20px"}),
-    ], style={"margin-bottom": "30px"}),
-    
-    # Market Analysis Section
-    html.Div([
-        html.H2("Market Analysis"),
-        
-        # Correlation matrix
-        html.Div([
-            html.H3("Asset Correlation"),
-            dcc.Graph(id="correlation-matrix", style={"height": "400px"})
-        ], style={"margin-bottom": "20px"}),
-        
-        # Alerts and events
-        html.Div([
-            html.H3("Alerts & Events"),
-            html.Div(id="alerts-section")
-        ], style={"margin-bottom": "20px"}),
-    ]),
-    
-    # Auto-update interval
-    dcc.Interval(
-        id="interval-component",
-        interval=60*1000,  # in milliseconds (1 minute)
-        n_intervals=0
-    ),
-    
-    # Manual refresh button
-    html.Div([
-        html.Button(
-            "Refresh Data", 
-            id="refresh-button", 
-            style={
-                "margin-top": "20px",
-                "margin-bottom": "20px",
-                "background-color": "#007BFF",
-                "color": "white",
-                "border": "none",
-                "padding": "10px 20px",
-                "cursor": "pointer"
-            }
-        ),
-        html.Div(id="refresh-status")
-    ], style={"text-align": "center"})
-], style={"max-width": "1200px", "margin": "0 auto", "padding": "20px"})
+# Import views
+from dashboard.views.system_view import create_system_view
+from dashboard.views.portfolio_view import create_portfolio_view
+from dashboard.views.market_view import create_market_view
+from dashboard.views.strategy_view import create_strategy_view
 
-# Callbacks
-@callback(
-    Output("price-chart", "figure"),
-    [Input("interval-component", "n_intervals"),
-     Input("symbol-selector", "value"),
-     Input("timeframe-selector", "value"),
-     Input("refresh-button", "n_clicks")]
-)
-def update_price_chart(n_intervals, symbol, timeframe, n_clicks):
-    if not symbol or not timeframe:
-        return go.Figure()
+# Import views callback registrations
+from dashboard.views import system_view, portfolio_view, market_view, strategy_view
+
+# Import services
+from dashboard.services import system_service, portfolio_service, market_service, strategy_service
+
+# Configure logging
+logger = log_manager.get_logger(__name__, {"component": "dashboard.app"})
+
+# Global variables for thread management
+_app_instance = None
+_server_thread = None
+_shutdown_event = threading.Event()
+_running = False
+
+
+def create_app():
+    """
+    Create the Dash application.
     
-    # Get chart data
-    chart_data = data_handler.get_price_chart_data(
-        symbol=symbol,
-        timeframe=timeframe,
-        n_periods=100
+    Returns:
+        Dash application
+    """
+    global _app_instance
+    
+    # Return existing instance if already created
+    if _app_instance is not None:
+        return _app_instance
+    
+    # Load configuration
+    config = get_dashboard_config()
+    
+    # Set up metrics
+    metrics_client = metrics.get_metrics_client()
+    dashboard_request_counter = metrics_client.counter(
+        name="dashboard_requests_total",
+        description="Total number of dashboard requests",
+        labels=["view", "method"]
     )
     
-    # Create figure with secondary y-axis for volume
-    fig = make_subplots(specs=[[{"secondary_y": True}]])
+    # Set up tracing
+    tracer = tracing.get_tracer("dashboard")
     
-    # Add price candlestick chart on primary axis
-    fig.add_trace(
-        go.Candlestick(
-            x=chart_data['data']['timestamps'],
-            open=chart_data['data']['open'],
-            high=chart_data['data']['high'],
-            low=chart_data['data']['low'],
-            close=chart_data['data']['close'],
-            name="Price"
-        ),
-        secondary_y=False
-    )
+    # Initialize Flask server
+    server = Flask(__name__)
     
-    # Add volume chart on secondary axis
-    fig.add_trace(
-        go.Bar(
-            x=chart_data['data']['timestamps'],
-            y=chart_data['data']['volume'],
-            name="Volume",
-            marker_color='rgba(55, 83, 109, 0.7)'
-        ),
-        secondary_y=True
-    )
-    
-    # Add indicators if available
-    if 'indicators' in chart_data:
-        indicators = chart_data['indicators']
-        
-        if 'sma20' in indicators:
-            fig.add_trace(
-                go.Scatter(
-                    x=chart_data['data']['timestamps'],
-                    y=indicators['sma20'],
-                    name="SMA(20)",
-                    line=dict(color='blue', width=1)
-                ),
-                secondary_y=False
-            )
-        
-        if 'sma50' in indicators:
-            fig.add_trace(
-                go.Scatter(
-                    x=chart_data['data']['timestamps'],
-                    y=indicators['sma50'],
-                    name="SMA(50)",
-                    line=dict(color='orange', width=1)
-                ),
-                secondary_y=False
-            )
-        
-        if all(k in indicators for k in ['bb_upper', 'bb_middle', 'bb_lower']):
-            fig.add_trace(
-                go.Scatter(
-                    x=chart_data['data']['timestamps'],
-                    y=indicators['bb_upper'],
-                    name="BB Upper",
-                    line=dict(color='rgba(0, 128, 0, 0.3)', width=1),
-                    showlegend=True
-                ),
-                secondary_y=False
-            )
-            
-            fig.add_trace(
-                go.Scatter(
-                    x=chart_data['data']['timestamps'],
-                    y=indicators['bb_lower'],
-                    name="BB Lower",
-                    line=dict(color='rgba(0, 128, 0, 0.3)', width=1),
-                    fill='tonexty',
-                    fillcolor='rgba(0, 128, 0, 0.1)',
-                    showlegend=True
-                ),
-                secondary_y=False
-            )
-    
-    # Add current regime annotation if available
-    if 'regime' in chart_data:
-        regime = chart_data['regime']
-        fig.add_annotation(
-            x=0.02,
-            y=0.98,
-            xref="paper",
-            yref="paper",
-            text=f"Regime: {regime}",
-            showarrow=False,
-            font=dict(
-                size=12,
-                color="black"
-            ),
-            bgcolor="rgba(255, 255, 255, 0.8)",
-            bordercolor="gray",
-            borderwidth=1,
-            borderpad=4
-        )
-    
-    # Update layout
-    fig.update_layout(
-        title=f"{symbol} Price Chart ({timeframe})",
-        xaxis_title="Time",
-        xaxis_rangeslider_visible=False,
-        height=500,
-        margin=dict(l=40, r=40, t=40, b=40),
-        hovermode="x unified",
-        legend=dict(
-            orientation="h",
-            yanchor="bottom",
-            y=1.02,
-            xanchor="right",
-            x=1
-        )
-    )
-    
-    # Update y-axis labels
-    fig.update_yaxes(title_text="Price", secondary_y=False)
-    fig.update_yaxes(title_text="Volume", secondary_y=True)
-    
-    return fig
-
-@callback(
-    Output("market-summary-cards", "children"),
-    [Input("interval-component", "n_intervals"),
-     Input("refresh-button", "n_clicks")]
-)
-def update_market_summary_cards(n_intervals, n_clicks):
-    # Get market overview data
-    overview = data_handler.get_market_overview()
-    
-    # Create summary cards
-    cards = []
-    
-    for symbol_data in overview['market_data']:
-        symbol = symbol_data['symbol']
-        price = symbol_data.get('price', 0.0)
-        daily_change = symbol_data.get('daily_change', 0.0)
-        regime = symbol_data.get('regime', 'unknown')
-        
-        # Determine color based on price change
-        change_color = "green" if daily_change >= 0 else "red"
-        change_icon = "▲" if daily_change >= 0 else "▼"
-        
-        # Create card element
-        card = html.Div([
-            html.H4(symbol, style={"margin-bottom": "5px"}),
-            html.P(f"${price:,.2f}", style={"font-size": "1.2em", "margin-bottom": "5px"}),
-            html.P([
-                f"{change_icon} {abs(daily_change):.2f}%"
-            ], style={"color": change_color, "margin-bottom": "5px"}),
-            html.P(f"Regime: {regime}", style={"font-size": "0.8em", "margin-bottom": "0px"})
-        ], style={
-            "border": "1px solid #ddd",
-            "border-radius": "5px",
-            "padding": "10px",
-            "margin": "5px",
-            "width": "150px",
-            "display": "inline-block",
-            "text-align": "center"
-        })
-        
-        cards.append(card)
-    
-    return cards
-
-@callback(
-    Output("volume-profile-chart", "figure"),
-    [Input("interval-component", "n_intervals"),
-     Input("symbol-selector", "value"),
-     Input("timeframe-selector", "value"),
-     Input("refresh-button", "n_clicks")]
-)
-def update_volume_profile_chart(n_intervals, symbol, timeframe, n_clicks):
-    if not symbol or not timeframe:
-        return go.Figure()
-    
-    # Get volume profile data
-    profile_data = data_handler.get_volume_profile(
-        symbol=symbol,
-        timeframe=timeframe,
-        n_periods=100,
-        n_bins=20
-    )
-    
-    # Create figure
-    fig = go.Figure()
-    
-    # Add horizontal volume bars
-    fig.add_trace(
-        go.Bar(
-            y=profile_data['price_levels'],
-            x=profile_data['volumes'],
-            orientation='h',
-            name="Volume",
-            marker=dict(
-                color='rgba(55, 83, 109, 0.7)',
-                line=dict(
-                    color='rgba(55, 83, 109, 1.0)',
-                    width=1
-                )
-            )
-        )
-    )
-    
-    # Add POC line
-    if profile_data['poc'] is not None:
-        fig.add_shape(
-            type="line",
-            x0=0,
-            y0=profile_data['poc'],
-            x1=max(profile_data['volumes']) if profile_data['volumes'] else 1,
-            y1=profile_data['poc'],
-            line=dict(
-                color="red",
-                width=2,
-                dash="dash",
-            )
-        )
-        
-        fig.add_annotation(
-            x=max(profile_data['volumes']) * 0.95 if profile_data['volumes'] else 0.95,
-            y=profile_data['poc'],
-            text="POC",
-            showarrow=False,
-            font=dict(
-                size=10,
-                color="red"
-            )
-        )
-    
-    # Add Value Area
-    if profile_data['value_area'] and len(profile_data['value_area']) == 2:
-        # Value Area Low
-        fig.add_shape(
-            type="line",
-            x0=0,
-            y0=profile_data['value_area'][0],
-            x1=max(profile_data['volumes']) if profile_data['volumes'] else 1,
-            y1=profile_data['value_area'][0],
-            line=dict(
-                color="green",
-                width=1,
-                dash="dot",
-            )
-        )
-        
-        fig.add_annotation(
-            x=max(profile_data['volumes']) * 0.95 if profile_data['volumes'] else 0.95,
-            y=profile_data['value_area'][0],
-            text="VAL",
-            showarrow=False,
-            font=dict(
-                size=8,
-                color="green"
-            )
-        )
-        
-        # Value Area High
-        fig.add_shape(
-            type="line",
-            x0=0,
-            y0=profile_data['value_area'][1],
-            x1=max(profile_data['volumes']) if profile_data['volumes'] else 1,
-            y1=profile_data['value_area'][1],
-            line=dict(
-                color="green",
-                width=1,
-                dash="dot",
-            )
-        )
-        
-        fig.add_annotation(
-            x=max(profile_data['volumes']) * 0.95 if profile_data['volumes'] else 0.95,
-            y=profile_data['value_area'][1],
-            text="VAH",
-            showarrow=False,
-            font=dict(
-                size=8,
-                color="green"
-            )
-        )
-    
-    # Update layout
-    fig.update_layout(
-        title=f"{symbol} Volume Profile ({timeframe})",
-        xaxis_title="Volume",
-        yaxis_title="Price",
-        height=300,
-        margin=dict(l=40, r=40, t=40, b=40),
-        hovermode="closest"
-    )
-    
-    return fig
-
-@callback(
-    Output("regime-distribution-chart", "figure"),
-    [Input("interval-component", "n_intervals"),
-     Input("symbol-selector", "value"),
-     Input("refresh-button", "n_clicks")]
-)
-def update_regime_distribution_chart(n_intervals, symbol, n_clicks):
-    if not symbol:
-        return go.Figure()
-    
-    # Get regime distribution data
-    regime_data = data_handler.get_regime_distribution(symbol)
-    
-    # Create colors for regimes
-    colors = ['#2E86C1', '#28B463', '#D4AC0D', '#CB4335', '#884EA0']
-    bar_colors = colors[:len(regime_data['regimes'])]
-    
-    # Create figure
-    fig = go.Figure()
-    
-    # Add regime distribution bars
-    fig.add_trace(
-        go.Bar(
-            x=regime_data['regimes'],
-            y=regime_data['counts'],
-            marker_color=bar_colors,
-            text=regime_data['counts'],
-            textposition='auto'
-        )
-    )
-    
-    # Add marker for current regime
-    if regime_data['current_regime'] is not None:
-        try:
-            current_index = regime_data['regimes'].index(regime_data['current_regime'])
-            
-            fig.add_annotation(
-                x=regime_data['regimes'][current_index],
-                y=regime_data['counts'][current_index] + max(regime_data['counts']) * 0.1 if regime_data['counts'] else 1,
-                text="Current",
-                showarrow=True,
-                arrowhead=1,
-                arrowcolor='red',
-                arrowsize=1,
-                arrowwidth=2
-            )
-        except (ValueError, IndexError) as e:
-            logger.warning(f"Error adding current regime annotation: {e}")
-    
-    # Update layout
-    fig.update_layout(
-        title=f"{symbol} Market Regime Distribution",
-        xaxis_title="Regime",
-        yaxis_title="Days",
-        height=300,
-        margin=dict(l=40, r=40, t=40, b=40)
-    )
-    
-    return fig
-
-@callback(
-    Output("performance-metrics-table", "children"),
-    [Input("interval-component", "n_intervals"),
-     Input("refresh-button", "n_clicks")]
-)
-def update_performance_metrics_table(n_intervals, n_clicks):
-    # Get strategy performance data
-    performance_data = data_handler.get_strategy_performance()
-    
-    if not performance_data['strategies']:
-        return html.P("No strategy performance data available")
-    
-    # Create table rows
-    rows = []
-    
-    # Define metrics to display
-    metric_order = [
-        "total_return", "annual_return", "sharpe_ratio", 
-        "max_drawdown", "win_rate", "profit_factor"
+    # Initialize Dash app
+    external_stylesheets = [
+        dbc.themes.BOOTSTRAP if config.get("theme") == "light" else dbc.themes.DARKLY,
+        "https://use.fontawesome.com/releases/v5.15.4/css/all.css"
     ]
     
-    metric_labels = {
-        "total_return": "Total Return (%)",
-        "annual_return": "Annual Return (%)",
-        "sharpe_ratio": "Sharpe Ratio",
-        "max_drawdown": "Max Drawdown (%)",
-        "win_rate": "Win Rate (%)",
-        "profit_factor": "Profit Factor",
-        "num_trades": "Number of Trades"
-    }
-    
-    for metric in metric_order:
-        row_cells = [html.Td(metric_labels.get(metric, metric))]
-        
-        for i, strategy in enumerate(performance_data['strategies']):
-            metrics = performance_data['metrics'][i]
-            value = metrics.get(metric, "N/A")
-            
-            # Format percentages
-            if isinstance(value, (int, float)) and ("return" in metric or "drawdown" in metric or "rate" in metric):
-                formatted_value = f"{value:.2f}%" if value != "N/A" else "N/A"
-            else:
-                formatted_value = f"{value:.2f}" if isinstance(value, (int, float)) else str(value)
-            
-            # Determine color based on metric
-            if metric == "max_drawdown":
-                color = "red" if isinstance(value, (int, float)) and value > 15 else "black"
-            elif "return" in metric or "ratio" in metric or "factor" in metric or "rate" in metric:
-                color = "green" if isinstance(value, (int, float)) and value > 0 else "red"
-            else:
-                color = "black"
-            
-            row_cells.append(html.Td(formatted_value, style={"color": color}))
-        
-        rows.append(html.Tr(row_cells))
-    
-    # Create table headers
-    headers = [html.Th("Metric")] + [html.Th(strategy) for strategy in performance_data['strategies']]
-    
-    # Create table
-    table = html.Table(
-        [
-            html.Thead(html.Tr(headers)),
-            html.Tbody(rows)
+    app = dash.Dash(
+        __name__,
+        server=server,
+        external_stylesheets=external_stylesheets,
+        suppress_callback_exceptions=True,
+        meta_tags=[
+            {"name": "viewport", "content": "width=device-width, initial-scale=1"}
         ],
-        style={
-            "width": "100%", 
-            "border-collapse": "collapse", 
-            "border": "1px solid #ddd"
-        }
     )
     
-    return table
-
-@callback(
-    Output("performance-chart", "figure"),
-    [Input("interval-component", "n_intervals"),
-     Input("refresh-button", "n_clicks")]
-)
-def update_performance_chart(n_intervals, n_clicks):
-    # This is a placeholder - in production we would get actual strategy performance data
-    # For now, simulate performance data for two strategies
+    app.title = "Instinct AI Trading Platform"
     
-    # Create date range
-    dates = pd.date_range(start='2023-01-01', end='2023-01-31', freq='D')
+    # Set interval values from configuration
+    refresh_intervals = config.get("refresh_intervals", {})
+    fast_interval = refresh_intervals.get("fast", 1000)
+    medium_interval = refresh_intervals.get("medium", 5000)
+    slow_interval = refresh_intervals.get("slow", 30000)
     
-    # Create random cumulative performance for two strategies
-    np.random.seed(42)  # For reproducibility
-    strat1_returns = np.random.normal(0.001, 0.01, len(dates)).cumsum() + 1
-    strat2_returns = np.random.normal(0.0015, 0.015, len(dates)).cumsum() + 1
-    benchmark_returns = np.random.normal(0.0005, 0.008, len(dates)).cumsum() + 1
-    
-    # Create figure
-    fig = go.Figure()
-    
-    # Add strategy performance lines
-    fig.add_trace(
-        go.Scatter(
-            x=dates,
-            y=strat1_returns,
-            name="LSTM Strategy",
-            line=dict(color='blue', width=2)
-        )
-    )
-    
-    fig.add_trace(
-        go.Scatter(
-            x=dates,
-            y=strat2_returns,
-            name="Volume Profile Strategy",
-            line=dict(color='green', width=2)
-        )
-    )
-    
-    fig.add_trace(
-        go.Scatter(
-            x=dates,
-            y=benchmark_returns,
-            name="Benchmark (BTC/USDT)",
-            line=dict(color='gray', width=2, dash='dash')
-        )
-    )
-    
-    # Update layout
-    fig.update_layout(
-        title="Strategy Performance Comparison",
-        xaxis_title="Date",
-        yaxis_title="Cumulative Return",
-        height=400,
-        margin=dict(l=40, r=40, t=40, b=40),
-        hovermode="x unified",
-        legend=dict(
-            orientation="h",
-            yanchor="bottom",
-            y=1.02,
-            xanchor="right",
-            x=1
-        )
-    )
-    
-    return fig
-
-@callback(
-    Output("correlation-matrix", "figure"),
-    [Input("interval-component", "n_intervals"),
-     Input("refresh-button", "n_clicks")]
-)
-def update_correlation_matrix(n_intervals, n_clicks):
-    # Get correlation matrix data
-    matrix_data = data_handler.get_correlation_matrix()
-    
-    if not matrix_data.get('matrix'):
-        return go.Figure()
-    
-    # Create figure
-    fig = go.Figure()
-    
-    # Add heatmap
-    fig.add_trace(go.Heatmap(
-        z=matrix_data['matrix'],
-        x=matrix_data['symbols'],
-        y=matrix_data['symbols'],
-        colorscale='RdBu',
-        zmin=-1,
-        zmax=1,
-        colorbar=dict(title="Correlation")
-    ))
-    
-    # Update layout
-    fig.update_layout(
-        title="Asset Correlation Matrix",
-        height=400,
-        margin=dict(l=40, r=40, t=40, b=40),
-        xaxis_showgrid=False,
-        yaxis_showgrid=False,
-        xaxis_zeroline=False,
-        yaxis_zeroline=False
-    )
-    
-    return fig
-
-@callback(
-    Output("alerts-section", "children"),
-    [Input("interval-component", "n_intervals"),
-     Input("refresh-button", "n_clicks")]
-)
-def update_alerts_section(n_intervals, n_clicks):
-    # Get alerts
-    alerts = data_handler.get_alerts()
-    
-    if not alerts:
-        return html.P("No active alerts", style={"font-style": "italic"})
-    
-    # Create alert cards
-    alert_cards = []
-    
-    for alert in alerts:
-        # Determine severity color
-        severity = alert.get('severity', 'medium')
-        severity_color = {
-            'high': '#F8D7DA',  # light red
-            'medium': '#FFF3CD',  # light yellow
-            'low': '#D1ECF1'  # light blue
-        }.get(severity, '#FFF3CD')
+    # Define app layout with navigation and content area
+    app.layout = html.Div([
+        # Store for current view
+        dcc.Store(id="current-view", data="system"),
         
-        # Create alert card
-        card = html.Div([
-            html.Div([
-                html.Strong(f"{alert.get('type', 'Alert').replace('_', ' ').title()}: "),
-                html.Span(alert.get('message', 'No details'))
-            ]),
-            html.Div([
-                html.Small(f"Symbol: {alert.get('symbol', 'N/A')} | "),
-                html.Small(f"Time: {alert.get('timestamp', datetime.now().isoformat()).split('T')[0]}")
-            ], style={"margin-top": "5px", "color": "#666"})
-        ], style={
-            "background-color": severity_color,
-            "border": f"1px solid {severity_color}",
-            "border-radius": "5px",
-            "padding": "10px",
-            "margin-bottom": "10px"
-        })
+        # Global intervals for data refresh
+        dcc.Interval(id="fast-interval", interval=fast_interval, n_intervals=0),
+        dcc.Interval(id="medium-interval", interval=medium_interval, n_intervals=0),
+        dcc.Interval(id="slow-interval", interval=slow_interval, n_intervals=0),
         
-        alert_cards.append(card)
+        # Navbar
+        create_navbar(theme=config.get("theme", "light")),
+        
+        # Main content
+        dbc.Container(
+            fluid=True,
+            className="mt-4",
+            children=[
+                dbc.Row([
+                    # Left sidebar with controls
+                    dbc.Col(
+                        width=3,
+                        children=[
+                            html.Div(id="control-panel-container"),
+                        ]
+                    ),
+                    
+                    # Main content area
+                    dbc.Col(
+                        width=9,
+                        children=[
+                            # Content will be populated by the callback based on current view
+                            html.Div(id="page-content")
+                        ]
+                    )
+                ])
+            ]
+        ),
+        
+        # Footer
+        html.Footer(
+            className="footer mt-auto py-3 bg-light",
+            children=[
+                dbc.Container(
+                    fluid=True,
+                    children=[
+                        html.Span(
+                            f"Instinct AI Trading Platform © {datetime.now().year}",
+                            className="text-muted"
+                        ),
+                        html.Span(
+                            id="server-time",
+                            className="text-muted float-right"
+                        ),
+                        dcc.Interval(
+                            id="interval-server-time",
+                            interval=1000,  # in milliseconds
+                            n_intervals=0
+                        )
+                    ]
+                )
+            ]
+        )
+    ])
     
-    return html.Div(alert_cards)
-
-@callback(
-    Output("last-update-time", "children"),
-    [Input("interval-component", "n_intervals"),
-     Input("refresh-button", "n_clicks")]
-)
-def update_last_update_time(n_intervals, n_clicks):
-    # Get the market monitor's last update time
-    market_monitor = get_market_monitor()
-    last_update = market_monitor.last_update_time
+    # Store configuration in app for access by callbacks
+    app.config = config
     
-    if last_update:
-        return f"Last updated: {last_update.strftime('%Y-%m-%d %H:%M:%S')}"
-    else:
-        return "Data not yet loaded"
+    # Register callbacks
+    register_callbacks(app)
+    
+    # Register view-specific callbacks
+    system_view.register_callbacks(app)
+    portfolio_view.register_callbacks(app)
+    market_view.register_callbacks(app)
+    strategy_view.register_callbacks(app)
+    
+    # Store the app instance
+    _app_instance = app
+    
+    return app
 
-@callback(
-    Output("refresh-status", "children"),
-    Input("refresh-button", "n_clicks")
-)
-def refresh_data(n_clicks):
-    if not n_clicks:
+
+def register_callbacks(app):
+    """
+    Register callbacks for the application.
+    
+    Args:
+        app: Dash application
+    """
+    # Callback to update the content based on the current view
+    @app.callback(
+        Output("page-content", "children"),
+        Input("current-view", "data")
+    )
+    def render_page_content(view):
+        """Render the content for the current view"""
+        # Get view configuration
+        views_config = app.config.get("views", {})
+        
+        # Check if the view is enabled
+        if view in views_config and not views_config[view].get("enabled", True):
+            return html.Div([
+                html.H2(f"{view.capitalize()} View Disabled"),
+                html.P("This view has been disabled in the configuration.")
+            ])
+        
+        if view == "system":
+            return create_system_view()
+        elif view == "portfolio":
+            return create_portfolio_view()
+        elif view == "market":
+            return create_market_view()
+        elif view == "strategy":
+            return create_strategy_view()
+        else:
+            # Default to system view
+            return create_system_view()
+    
+    # Callback to update the control panel based on the current view
+    @app.callback(
+        Output("control-panel-container", "children"),
+        Input("current-view", "data")
+    )
+    def render_control_panel(view):
+        """Render the control panel for the current view"""
+        return create_control_panel(view)
+    
+    # Callback to update the current view based on navbar clicks
+    @app.callback(
+        Output("current-view", "data"),
+        [
+            Input("nav-system", "n_clicks"),
+            Input("nav-portfolio", "n_clicks"),
+            Input("nav-market", "n_clicks"),
+            Input("nav-strategy", "n_clicks")
+        ],
+        State("current-view", "data")
+    )
+    def update_current_view(n_system, n_portfolio, n_market, n_strategy, current):
+        """Update the current view based on which navbar item was clicked"""
+        ctx = dash.callback_context
+        
+        if not ctx.triggered:
+            return current
+        
+        button_id = ctx.triggered[0]["prop_id"].split(".")[0]
+        
+        if button_id == "nav-system":
+            return "system"
+        elif button_id == "nav-portfolio":
+            return "portfolio"
+        elif button_id == "nav-market":
+            return "market"
+        elif button_id == "nav-strategy":
+            return "strategy"
+        
+        return current
+    
+    # Callback to update server time
+    @app.callback(
+        Output("server-time", "children"),
+        Input("interval-server-time", "n_intervals")
+    )
+    def update_server_time(n):
+        """Update the server time display"""
+        return f"Server Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+    
+    # System view callbacks
+    
+    # Callback to update system state
+    @app.callback(
+        [
+            Output("system-status", "children"),
+            Output("cpu-usage", "children"),
+            Output("memory-usage", "children"),
+            Output("disk-usage", "children")
+        ],
+        Input("system-refresh-interval", "n_intervals")
+    )
+    def update_system_state(n):
+        """Update the system state information"""
+        # Get system state
+        state = system_service.get_system_state()
+        
+        # Create status indicators
+        component_statuses = []
+        for name, status in state["components"].items():
+            color = "success" if status == "online" else "warning" if status == "degraded" else "danger"
+            component_statuses.append(
+                dbc.Badge(f"{name}: {status}", color=color, className="mr-2 mb-2")
+            )
+        
+        # Create system status indicators
+        status_indicators = html.Div([
+            html.H5("Component Status"),
+            html.Div(component_statuses)
+        ])
+        
+        # Create usage indicators
+        cpu_usage = f"{state['cpu']['percent']:.1f}%"
+        memory_usage = f"{state['memory']['percent']:.1f}% ({state['memory']['used'] / 1024 / 1024 / 1024:.1f} GB / {state['memory']['total'] / 1024 / 1024 / 1024:.1f} GB)"
+        disk_usage = f"{state['disk']['percent']:.1f}% ({state['disk']['used'] / 1024 / 1024 / 1024:.1f} GB / {state['disk']['total'] / 1024 / 1024 / 1024:.1f} GB)"
+        
+        return status_indicators, cpu_usage, memory_usage, disk_usage
+    
+    # Callback to update recent logs
+    @app.callback(
+        Output("recent-logs", "children"),
+        Input("logs-refresh-interval", "n_intervals")
+    )
+    def update_recent_logs(n):
+        """Update the recent logs display"""
+        # Get recent logs
+        logs = system_service.get_recent_logs(limit=10)
+        
+        # Create log table
+        log_rows = []
+        for log in logs:
+            level_color = {
+                "DEBUG": "secondary",
+                "INFO": "info",
+                "WARNING": "warning",
+                "ERROR": "danger",
+                "CRITICAL": "danger"
+            }.get(log["level"], "secondary")
+            
+            log_rows.append(
+                html.Tr([
+                    html.Td(log["timestamp"]),
+                    html.Td(html.Span(log["level"], className=f"badge badge-{level_color}")),
+                    html.Td(log["component"]),
+                    html.Td(log["message"])
+                ])
+            )
+        
+        log_table = dbc.Table(
+            [
+                html.Thead(
+                    html.Tr([
+                        html.Th("Timestamp"),
+                        html.Th("Level"),
+                        html.Th("Component"),
+                        html.Th("Message")
+                    ])
+                ),
+                html.Tbody(log_rows)
+            ],
+            bordered=True,
+            hover=True,
+            responsive=True,
+            size="sm"
+        )
+        
+        return log_table
+    
+    # Callback to handle start/stop system buttons
+    @app.callback(
+        Output("system-action-output", "children"),
+        [
+            Input("btn-start-system", "n_clicks"),
+            Input("btn-stop-system", "n_clicks"),
+            Input("btn-export-logs", "n_clicks")
+        ]
+    )
+    def handle_system_actions(n_start, n_stop, n_export):
+        """Handle system control actions"""
+        ctx = dash.callback_context
+        
+        if not ctx.triggered:
+            return ""
+        
+        button_id = ctx.triggered[0]["prop_id"].split(".")[0]
+        
+        if button_id == "btn-start-system":
+            result = system_service.start_system()
+            return dbc.Alert(result["message"], color="success")
+        elif button_id == "btn-stop-system":
+            result = system_service.stop_system()
+            return dbc.Alert(result["message"], color="warning")
+        elif button_id == "btn-export-logs":
+            return dbc.Alert("Logs exported successfully", color="info")
+        
         return ""
     
-    try:
-        # Trigger a manual data update
-        success = data_handler.update_data()
-        
-        if success:
-            return html.Div("Data refreshed successfully!", 
-                         style={"color": "green", "margin-top": "10px"})
-        else:
-            return html.Div("Error refreshing data", 
-                         style={"color": "red", "margin-top": "10px"})
-                         
-    except Exception as e:
-        logger.error(f"Error refreshing data: {e}")
-        return html.Div(f"Error: {str(e)}", 
-                     style={"color": "red", "margin-top": "10px"})
-
-# Run the app
-if __name__ == "__main__":
-    try:
-        # Parse command line arguments for port and debug mode
-        import argparse
-        parser = argparse.ArgumentParser(description="Run the Instinct AI Trading Dashboard")
-        parser.add_argument("--port", type=int, default=8050, help="Port to run the dashboard on")
-        parser.add_argument("--debug", action="store_true", help="Run in debug mode")
-        args = parser.parse_args()
-        
-        # Start the dashboard
-        logger.info(f"Starting dashboard on port {args.port} (debug={args.debug})")
-        app.run_server(debug=args.debug, port=args.port)
-    except Exception as e:
-        logger.error(f"Error starting dashboard: {e}")
-        traceback.print_exc()
-    finally:
-        # Make sure to stop the market monitor when the app exits
-        market_monitor = get_market_monitor()
-        market_monitor.stop()
-    # Add strategy returns if available
-    for strategy_name, metrics in data_refresher.performance.items():
-        # Create a synthetic equity curve based on reported returns
-        # This is just for visualization purposes
-        if 'annual_return' in metrics:
-            annual_return = metrics['annual_return'] / 100  # Convert from percentage
-            days = (benchmark_data.index[-1] - benchmark_data.index[0]).days
-            daily_return = (1 + annual_return) ** (1/365) - 1
-            
-            # Generate synthetic equity curve
-            equity_curve = []
-            for i in range(len(benchmark_data)):
-                # Adjust daily return by benchmark volatility for more realistic curve
-                bench_vol = abs(benchmark_returns[i]) / benchmark_returns.std() if benchmark_returns.std() > 0 else 1
-                adjusted_return = daily_return * (0.5 + 0.5 * bench_vol)
-                
-                if i == 0:
-                    equity_curve.append(1 + adjusted_return)
-                else:
-                    equity_curve.append(equity_curve[i-1] * (1 + adjusted_return))
-            
-            strategy_cum_returns = [ec - 1 for ec in equity_curve]
-            
-            fig.add_trace(
-                go.Scatter(
-                    x=benchmark_data.index,
-                    y=np.array(strategy_cum_returns) * 100,  # Convert to percentage
-                    name=strategy_name,
-                    line=dict(width=2)
-                )
-            )
+    # Portfolio view callbacks
     
-    # Update layout
-    fig.update_layout(
-        title="Cumulative Returns Comparison",
-        xaxis_title="Date",
-        yaxis_title="Cumulative Return (%)",
-        height=300,
-        margin=dict(l=40, r=40, t=40, b=40),
-        legend_title="Strategy",
-        hovermode="closest"
-    )
-    
-    return fig
-
-@callback(
-    Output("drawdown-chart", "figure"),
-    Input("interval-component", "n_intervals")
-)
-def update_drawdown_chart(n):
-    if not data_refresher.data:
-        return go.Figure()
-    
-    # Create drawdown chart for the first symbol
-    symbols = list(data_refresher.data.keys())
-    
-    if not symbols:
-        return go.Figure()
-    
-    symbol = symbols[0]
-    df = data_refresher.data[symbol]
-    
-    # Calculate drawdown
-    returns = df['close'].pct_change().fillna(0)
-    cum_returns = (1 + returns).cumprod()
-    running_max = np.maximum.accumulate(cum_returns)
-    drawdown = (cum_returns / running_max - 1) * 100  # Convert to percentage
-    
-    # Create figure
-    fig = go.Figure()
-    
-    # Add drawdown area chart
-    fig.add_trace(
-        go.Scatter(
-            x=df.index,
-            y=drawdown,
-            fill='tozeroy',
-            name=f"{symbol} Drawdown",
-            line=dict(color='red'),
-            fillcolor='rgba(255, 0, 0, 0.3)'
-        )
-    )
-    
-    # Update layout
-    fig.update_layout(
-        title="Market Drawdown",
-        xaxis_title="Date",
-        yaxis_title="Drawdown (%)",
-        height=300,
-        margin=dict(l=40, r=40, t=40, b=40),
-        legend_title="Symbol",
-        hovermode="closest"
-    )
-    
-    return fig
-
-@callback(
-    Output("rolling-metrics-chart", "figure"),
-    Input("interval-component", "n_intervals")
-)
-def update_rolling_metrics_chart(n):
-    if not data_refresher.data:
-        return go.Figure()
-    
-    # Create rolling metrics chart for the first symbol
-    symbols = list(data_refresher.data.keys())
-    
-    if not symbols:
-        return go.Figure()
-    
-    symbol = symbols[0]
-    df = data_refresher.data[symbol]
-    
-    # Calculate rolling metrics
-    window = min(30, len(df) // 2)  # 30-day window or half the data
-    returns = df['close'].pct_change().fillna(0)
-    
-    rolling_return = returns.rolling(window=window).mean() * window * 100  # Scaled to percentage
-    rolling_vol = returns.rolling(window=window).std() * np.sqrt(window) * 100  # Scaled to percentage
-    rolling_sharpe = rolling_return / rolling_vol if not rolling_vol.empty and rolling_vol.mean() > 0 else pd.Series(0, index=returns.index)
-    
-    # Create figure with secondary y-axis
-    fig = make_subplots(specs=[[{"secondary_y": True}]])
-    
-    # Add rolling return
-    fig.add_trace(
-        go.Scatter(
-            x=df.index,
-            y=rolling_return,
-            name="Rolling Return",
-            line=dict(color='green', width=2)
-        ),
-        secondary_y=False,
-    )
-    
-    # Add rolling volatility
-    fig.add_trace(
-        go.Scatter(
-            x=df.index,
-            y=rolling_vol,
-            name="Rolling Volatility",
-            line=dict(color='red', width=2)
-        ),
-        secondary_y=False,
-    )
-    
-    # Add rolling Sharpe ratio
-    fig.add_trace(
-        go.Scatter(
-            x=df.index,
-            y=rolling_sharpe,
-            name="Rolling Sharpe",
-            line=dict(color='blue', width=2)
-        ),
-        secondary_y=True,
-    )
-    
-    # Update layout
-    fig.update_layout(
-        title=f"{symbol} Rolling Metrics ({window}-day window)",
-        xaxis_title="Date",
-        height=300,
-        margin=dict(l=40, r=40, t=40, b=40),
-        legend_title="Metric",
-        hovermode="closest"
-    )
-    
-    # Update y-axis labels
-    fig.update_yaxes(title_text="Return/Volatility (%)", secondary_y=False)
-    fig.update_yaxes(title_text="Sharpe Ratio", secondary_y=True)
-    
-    return fig
-
-@callback(
-    Output("risk-metrics-table", "children"),
-    Input("interval-component", "n_intervals")
-)
-def update_risk_metrics_table(n):
-    if not data_refresher.data:
-        return html.P("No data available")
-    
-    # Calculate risk metrics for each symbol
-    risk_metrics = {}
-    
-    for symbol, df in data_refresher.data.items():
-        returns = df['close'].pct_change().dropna()
-        
-        if len(returns) < 10:
-            continue
-        
-        # Calculate basic risk metrics
-        volatility = returns.std() * np.sqrt(252) * 100  # Annualized, in percentage
-        
-        # Calculate drawdown
-        cum_returns = (1 + returns).cumprod()
-        running_max = np.maximum.accumulate(cum_returns)
-        drawdown = (cum_returns / running_max - 1) * 100  # In percentage
-        max_drawdown = drawdown.min()
-        
-        # Calculate VaR and CVaR (95%)
-        var_95 = np.percentile(returns, 5) * 100  # Daily VaR at 95% confidence, in percentage
-        cvar_95 = returns[returns <= var_95 / 100].mean() * 100  # Daily CVaR, in percentage
-        
-        # Store metrics
-        risk_metrics[symbol] = {
-            "volatility": volatility,
-            "max_drawdown": max_drawdown,
-            "var_95": var_95,
-            "cvar_95": cvar_95,
-            "worst_day": returns.min() * 100,  # In percentage
-            "best_day": returns.max() * 100    # In percentage
-        }
-    
-    if not risk_metrics:
-        return html.P("Not enough data to calculate risk metrics")
-    
-    # Create table rows
-    rows = []
-    
-    metric_labels = {
-        "volatility": "Volatility (Annual %)",
-        "max_drawdown": "Maximum Drawdown (%)",
-        "var_95": "Daily VaR (95%)",
-        "cvar_95": "Daily CVaR (95%)",
-        "worst_day": "Worst Daily Return (%)",
-        "best_day": "Best Daily Return (%)"
-    }
-    
-    for metric, label in metric_labels.items():
-        row_cells = [html.Td(label)]
-        
-        for symbol in risk_metrics.keys():
-            value = risk_metrics[symbol].get(metric, "N/A")
-            
-            # Format value
-            if isinstance(value, (int, float)):
-                formatted_value = f"{value:.2f}%"
-                
-                # Determine color based on metric
-                if metric in ["max_drawdown", "var_95", "cvar_95", "worst_day"]:
-                    color = "red"
-                elif metric in ["best_day"]:
-                    color = "green"
-                else:
-                    color = "black"
-            else:
-                formatted_value = str(value)
-                color = "black"
-            
-            row_cells.append(html.Td(formatted_value, style={"color": color}))
-        
-        rows.append(html.Tr(row_cells))
-    
-    # Create table headers
-    headers = [html.Th("Metric")] + [html.Th(symbol) for symbol in risk_metrics.keys()]
-    
-    # Create table
-    table = html.Table(
+    # Callback to update portfolio summary
+    @app.callback(
         [
-            html.Thead(html.Tr(headers)),
-            html.Tbody(rows)
+            Output("portfolio-summary", "children"),
+            Output("portfolio-value", "children"),
+            Output("daily-pnl", "children"),
+            Output("weekly-pnl", "children"),
+            Output("monthly-pnl", "children")
         ],
-        style={"width": "100%", "border-collapse": "collapse"}
+        Input("portfolio-refresh-interval", "n_intervals")
     )
-    
-    return table
-
-@callback(
-    Output("var-chart", "figure"),
-    Input("interval-component", "n_intervals")
-)
-def update_var_chart(n):
-    if not data_refresher.data:
-        return go.Figure()
-    
-    # Create VaR chart for the first symbol
-    symbols = list(data_refresher.data.keys())
-    
-    if not symbols:
-        return go.Figure()
-    
-    symbol = symbols[0]
-    df = data_refresher.data[symbol]
-    
-    # Calculate returns
-    returns = df['close'].pct_change().dropna() * 100  # In percentage
-    
-    # Create histogram for returns distribution
-    fig = go.Figure()
-    
-    # Add histogram
-    fig.add_trace(
-        go.Histogram(
-            x=returns,
-            nbinsx=30,
-            name="Returns Distribution",
-            marker_color='rgba(55, 83, 109, 0.7)'
+    def update_portfolio_summary(n):
+        """Update the portfolio summary information"""
+        # Get portfolio summary
+        summary = portfolio_service.get_portfolio_summary()
+        
+        # Create asset allocation pie chart
+        asset_allocation = dcc.Graph(
+            figure={
+                "data": [
+                    {
+                        "labels": list(summary["asset_allocation"].keys()),
+                        "values": list(summary["asset_allocation"].values()),
+                        "type": "pie",
+                        "hole": 0.4,
+                        "marker": {
+                            "colors": [
+                                "#FF9500", "#28A745", "#007BFF", "#6F42C1", "#FD7E14"
+                            ]
+                        }
+                    }
+                ],
+                "layout": {
+                    "title": "Asset Allocation",
+                    "height": 300,
+                    "margin": {"l": 10, "r": 10, "t": 40, "b": 10}
+                }
+            }
         )
+        
+        # Create risk metrics
+        risk_metrics = html.Div([
+            html.H5("Risk Metrics"),
+            dbc.Row([
+                dbc.Col(dbc.Card(html.Div([
+                    html.H6("Value at Risk (95%)", className="card-subtitle"),
+                    html.P(f"${summary['risk_metrics']['var_95']:,.2f}", className="lead")
+                ]), body=True)),
+                dbc.Col(dbc.Card(html.Div([
+                    html.H6("Sharpe Ratio", className="card-subtitle"),
+                    html.P(f"{summary['risk_metrics']['sharpe_ratio']:.2f}", className="lead")
+                ]), body=True)),
+                dbc.Col(dbc.Card(html.Div([
+                    html.H6("Max Drawdown", className="card-subtitle"),
+                    html.P(f"{summary['risk_metrics']['max_drawdown'] * 100:.1f}%", className="lead")
+                ]), body=True)),
+                dbc.Col(dbc.Card(html.Div([
+                    html.H6("Volatility", className="card-subtitle"),
+                    html.P(f"{summary['risk_metrics']['volatility'] * 100:.1f}%", className="lead")
+                ]), body=True))
+            ])
+        ])
+        
+        # Combine into summary card
+        portfolio_summary = html.Div([
+            asset_allocation,
+            html.Hr(),
+            risk_metrics
+        ])
+        
+        # Create value indicators
+        portfolio_value = f"${summary['total_value_usd']:,.2f}"
+        
+        daily_pnl = [
+            f"${summary['daily_pnl']:,.2f}",
+            html.Span(f" ({summary['daily_pnl_percent']:+.2f}%)", 
+                     className="text-success" if summary['daily_pnl_percent'] >= 0 else "text-danger")
+        ]
+        
+        weekly_pnl = [
+            f"${summary['weekly_pnl']:,.2f}",
+            html.Span(f" ({summary['weekly_pnl_percent']:+.2f}%)", 
+                     className="text-success" if summary['weekly_pnl_percent'] >= 0 else "text-danger")
+        ]
+        
+        monthly_pnl = [
+            f"${summary['monthly_pnl']:,.2f}",
+            html.Span(f" ({summary['monthly_pnl_percent']:+.2f}%)", 
+                     className="text-success" if summary['monthly_pnl_percent'] >= 0 else "text-danger")
+        ]
+        
+        return portfolio_summary, portfolio_value, daily_pnl, weekly_pnl, monthly_pnl
+    
+    # Callback to update positions table
+    @app.callback(
+        Output("positions-table", "children"),
+        Input("positions-refresh-interval", "n_intervals")
     )
-    
-    # Calculate VaR at different confidence levels
-    var_95 = np.percentile(returns, 5)
-    var_99 = np.percentile(returns, 1)
-    
-    # Add VaR lines
-    fig.add_vline(
-        x=var_95,
-        line_dash="dash",
-        line_color="red",
-        annotation_text="95% VaR",
-        annotation_position="top right"
-    )
-    
-    fig.add_vline(
-        x=var_99,
-        line_dash="dash",
-        line_color="darkred",
-        annotation_text="99% VaR",
-        annotation_position="top right"
-    )
-    
-    # Update layout
-    fig.update_layout(
-        title=f"{symbol} Returns Distribution and VaR",
-        xaxis_title="Daily Return (%)",
-        yaxis_title="Frequency",
-        height=300,
-        margin=dict(l=40, r=40, t=40, b=40),
-        legend_title="Legend",
-        hovermode="closest"
-    )
-    
-    return fig
+    def update_positions_table(n):
+        """Update the positions table"""
+        # Get positions
+        positions = portfolio_service.get_positions()
+        
+        # Create positions table
+        position_rows = []
+        for position in positions:
+            pnl_color = "success" if position["pnl"] >= 0 else "danger"
+            
+            position_rows.append(
+                html.Tr([
+                    html.Td(position["symbol"]),
+                    html.Td(f"{position['type']} ({position['side']})"),
+                    html.Td(f"${position['entry_price']:,.2f}"),
+                    html.Td(f"${position['current_price']:,.2f}"),
+                    html.Td(f"{position['quantity']}"),
+                    html.Td(f"${position['value_usd']:,.2f}"),
+                    html.Td(html.Span([
+                        f"${position['pnl']:,.2f}",
+                        html.Br(),
+                        f"({position['pnl_percent']:+.2f}%)"
+                    ], className=f"text-{pnl_color}")),
+                    html.Td(position["exchange"]),
+                    html.Td(
+                        dbc.Button("Close", color="danger", size="sm", id={"type": "close-position", "index": position["symbol"]})
+                    )
+                ])
+            )
+        
+        positions_table = dbc.Table(
+            [
+                html.Thead(
+                    html.Tr([
+                        html.Th("Symbol"),
+                        html.Th("Type"),
+                        html.Th("Entry Price"),
+                        html.Th("Current Price"),
+                        html.Th("Quantity"),
+                        html.Th("Value"),
+                        html.Th("P&L"),
+                        html.Th("Exchange"),
+                        html.Th("Actions")
+                    ])
+                ),
+                html.Tbody(position_rows)
+            ],
+            bordered=True,
+            hover=True,
+            responsive=True,
+            size="sm"
+        )
+        
+        return positions_table
 
-@callback(
-    Output("correlation-chart", "figure"),
-    Input("interval-component", "n_intervals")
-)
-def update_correlation_chart(n):
-    if not data_refresher.data or len(data_refresher.data) < 2:
-        return go.Figure()
-    
-    # Calculate returns for all symbols
-    returns_data = {}
-    
-    for symbol, df in data_refresher.data.items():
-        returns = df['close'].pct_change().dropna()
-        returns_data[symbol] = returns
-    
-    # Create returns DataFrame
-    returns_df = pd.DataFrame(returns_data)
-    
-    # Calculate correlation matrix
-    corr_matrix = returns_df.corr()
-    
-    # Create heatmap
-    fig = go.Figure(data=go.Heatmap(
-        z=corr_matrix.values,
-        x=corr_matrix.columns,
-        y=corr_matrix.index,
-        colorscale='RdBu',
-        zmin=-1,
-        zmax=1,
-        colorbar=dict(title="Correlation")
-    ))
-    
-    # Update layout
-    fig.update_layout(
-        title="Asset Correlation Matrix",
-        height=400,
-        margin=dict(l=40, r=40, t=40, b=40),
-        xaxis_showgrid=False,
-        yaxis_showgrid=False,
-        xaxis_zeroline=False,
-        yaxis_zeroline=False
-    )
-    
-    return fig
 
-@callback(
-    Output("last-update-time", "children"),
-    Input("interval-component", "n_intervals")
-)
-def update_last_update_time(n):
-    if data_refresher.last_update:
-        return f"Last updated: {data_refresher.last_update.strftime('%Y-%m-%d %H:%M:%S')}"
-    else:
-        return "Data not yet loaded"
-
-# Run the app
-if __name__ == "__main__":
+def run_server(host: str = None, port: int = None, debug: bool = None) -> None:
+    """
+    Run the dashboard server.
+    
+    Args:
+        host: Host address to bind to (uses config if None)
+        port: Port to listen on (uses config if None)
+        debug: Whether to run in debug mode (uses config if None)
+    """
+    global _running
+    
     try:
-        app.run_server(debug=True, port=8050)
+        # Get configuration
+        config = get_dashboard_config()
+        
+        # Use provided parameters or fall back to configuration
+        host = host or config.get("host", "0.0.0.0")
+        port = port or config.get("port", 8050)
+        debug = debug if debug is not None else config.get("debug", False)
+        
+        logger.info(f"Starting dashboard server on {host}:{port}")
+        app = create_app()
+        _running = True
+        app.run_server(host=host, port=port, debug=debug)
+    except Exception as e:
+        logger.error(f"Error running dashboard server: {str(e)}")
+        logger.debug("Dashboard server error details", exc_info=True)
     finally:
-        # Make sure to stop the data refresher thread when the app exits
-        data_refresher.stop() 
+        _running = False
+        logger.info("Dashboard server stopped")
+
+
+def run_in_thread(host: str = None, port: int = None, debug: bool = None) -> threading.Thread:
+    """
+    Run the dashboard server in a separate thread.
+    
+    Args:
+        host: Host address to bind to (uses config if None)
+        port: Port to listen on (uses config if None)
+        debug: Whether to run in debug mode (uses config if None)
+        
+    Returns:
+        Thread object running the server
+    """
+    global _server_thread, _shutdown_event
+    
+    # Reset shutdown event
+    _shutdown_event.clear()
+    
+    # Create server thread
+    _server_thread = threading.Thread(
+        target=lambda: run_server(host, port, debug),
+        daemon=True
+    )
+    
+    # Start thread
+    _server_thread.start()
+    
+    # Register shutdown handler
+    atexit.register(shutdown)
+    
+    return _server_thread
+
+
+def shutdown() -> None:
+    """
+    Shutdown the dashboard server gracefully.
+    """
+    global _running, _server_thread, _shutdown_event
+    
+    if not _running or _server_thread is None:
+        logger.info("Dashboard is not running")
+        return
+    
+    logger.info("Shutting down dashboard server...")
+    
+    # Signal shutdown
+    _shutdown_event.set()
+    _running = False
+    
+    # Wait for thread to exit (with timeout)
+    if _server_thread is not None:
+        _server_thread.join(timeout=5.0)
+    
+    logger.info("Dashboard server shutdown complete")
+
+
+def main():
+    """
+    Main function to run the dashboard application.
+    """
+    # Create the app
+    app = create_app()
+    
+    # Get configuration
+    config = get_dashboard_config()
+    host = config.get("host", "0.0.0.0")
+    port = config.get("port", 8050)
+    debug = config.get("debug", False)
+    
+    # Check if dashboard is enabled
+    if not config.get("enabled", True):
+        logger.info("Dashboard is disabled in configuration")
+        return
+    
+    # Run the app
+    logger.info(f"Starting dashboard on {host}:{port}")
+    app.run_server(host=host, port=port, debug=debug)
+
+
+if __name__ == "__main__":
+    main() 
