@@ -139,11 +139,109 @@ profiler.process_trade(
 components = profiler.get_liquidity_score_components('BTC/USD')
 ```
 
+### Impact Models
+
+The module provides several market impact models to estimate the price effect of executing orders:
+
+- **Linear Impact Model**: Implements the classic square-root law for market impact.
+- **Nonlinear Impact Model**: Separates impact into permanent and temporary components.
+- **ML-based Impact Model**: Uses machine learning to predict impact based on market conditions.
+
+```python
+from advanced_trading.analysis.market_microstructure.models import (
+    LinearImpactModel, NonlinearImpactModel, MLImpactModel
+)
+
+# Create linear impact model
+linear_model = LinearImpactModel(name="Square-Root Impact Model", alpha=0.5)
+
+# Create market state for prediction
+market_state = {
+    'volatility': 0.02,  # 2% daily volatility
+    'adv': 1000,         # Average daily volume
+    'spread': 0.001,     # Bid-ask spread (10 bps)
+    'depth': 50          # Market depth
+}
+
+# Predict impact for different order sizes
+sizes = [0.01, 0.05, 0.1]  # Order sizes as fraction of ADV
+for size in sizes:
+    impact = linear_model.predict_impact(size, market_state, 'buy')
+    print(f"Size: {size:.2f}, Impact: {impact:.6f}")
+
+# Train model with historical data
+training_result = linear_model.train(trade_data, market_data)
+```
+
+### Order Book Predictors
+
+The module includes time series prediction models for order book dynamics:
+
+- **VAR Order Book Predictor**: Uses Vector Autoregression for linear prediction of order book metrics.
+- **LSTM Order Book Predictor**: Uses LSTM networks for nonlinear prediction of order book metrics.
+
+```python
+from advanced_trading.analysis.market_microstructure.models import (
+    VAR_OrderBookPredictor, LSTM_OrderBookPredictor
+)
+
+# Create VAR predictor
+var_model = VAR_OrderBookPredictor(
+    name="VAR Order Book Predictor",
+    prediction_horizon=5,  # Predict 5 steps ahead
+    lag_order=3            # Use 3 lags
+)
+
+# Train the model with historical data
+var_model.train(order_book_metrics)
+
+# Make predictions using recent data
+predictions = var_model.predict(recent_data)
+```
+
+### Visualization Tools
+
+The module provides visualization tools for market microstructure analysis:
+
+- **OrderBookVisualizer**: Visualizes order book depth, imbalance, and dynamics.
+- **LiquidityVisualizer**: Visualizes bid-ask spread, market depth, and liquidity metrics.
+- **OrderFlowVisualizer**: Visualizes trade flow, volume profile, and trade clustering.
+- **ImpactVisualizer**: Visualizes market impact curves, components, and model comparisons.
+
+```python
+from advanced_trading.analysis.market_microstructure.visualization import (
+    OrderBookVisualizer, LiquidityVisualizer, 
+    OrderFlowVisualizer, ImpactVisualizer
+)
+
+# Create order book visualizer
+ob_viz = OrderBookVisualizer()
+
+# Plot order book snapshot
+fig, ax = ob_viz.plot_order_book_snapshot(
+    order_book=order_book,
+    levels=10,
+    show_cumulative=True
+)
+
+# Create impact visualizer
+impact_viz = ImpactVisualizer()
+
+# Plot impact curve
+fig, ax = impact_viz.plot_impact_curve(
+    sizes=sizes,
+    impacts=impacts,
+    model_name="Square-Root Impact Model",
+    fit_curve=True
+)
+```
+
 ## Examples
 
 The `examples` directory contains sample code demonstrating the use of these components:
 
-- `basic_usage.py`: Simple example of how to use all three components
+- `basic_usage.py`: Simple example of how to use all three analyzers
+- `models/example.py`: Example of impact models and order book prediction
 - `visualization_example.py`: Example of visualizing market microstructure data
 - `strategy_integration.py`: Example of integrating microstructure analysis into a trading strategy
 
@@ -170,8 +268,8 @@ These components are designed for high-performance applications:
 
 Planned enhancements include:
 
-- Machine learning models for order book prediction
-- Additional visualization tools for market microstructure
-- Reinforcement learning for adaptive execution
+- Additional machine learning models for order book prediction
+- Enhanced visualization tools for market microstructure
+- Integration with reinforcement learning for adaptive execution
 - Cross-exchange microstructure analysis
 - Market regime detection based on microstructure features 

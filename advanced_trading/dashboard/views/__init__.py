@@ -1,15 +1,35 @@
 """
 Dashboard Views
 
-This module contains visualization components for the unified dashboard,
-providing data presentation and visualization for different aspects of the 
-trading system.
+This module provides view components for the dashboard, organizing different
+aspects of the trading system into visual representations and interactive
+interfaces.
 
-Views are higher-level UI components that compose multiple widgets to create
-complete visualizations for specific data types or system aspects.
+Each view focuses on a specific aspect of the system, such as system status,
+portfolio management, market analysis, or strategy monitoring.
 """
 
-# No imports yet as views will be implemented later
+# Import views
+from .system_view import create_system_view
+from .portfolio_view import create_portfolio_view
+from .market_view import create_market_view
+from .strategy_view import create_strategy_view
+from .strategy_monitoring_view import create_strategy_monitoring_view
+from .performance_dashboard_view import create_performance_dashboard_view
 
-# Public API
-__all__ = []  # Will be populated as view components are implemented 
+# Register view callbacks
+from . import system_view
+from . import portfolio_view
+from . import market_view
+from . import strategy_view
+from . import strategy_monitoring_view
+from . import performance_dashboard_view
+
+__all__ = [
+    "create_system_view",
+    "create_portfolio_view",
+    "create_market_view",
+    "create_strategy_view",
+    "create_strategy_monitoring_view",
+    "create_performance_dashboard_view"
+] 

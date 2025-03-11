@@ -39,9 +39,11 @@ from dashboard.views.system_view import create_system_view
 from dashboard.views.portfolio_view import create_portfolio_view
 from dashboard.views.market_view import create_market_view
 from dashboard.views.strategy_view import create_strategy_view
+from dashboard.views.strategy_monitoring_view import create_strategy_monitoring_view
+from dashboard.views.performance_dashboard_view import create_performance_dashboard_view
 
 # Import views callback registrations
-from dashboard.views import system_view, portfolio_view, market_view, strategy_view
+from dashboard.views import system_view, portfolio_view, market_view, strategy_view, strategy_monitoring_view, performance_dashboard_view
 
 # Import services
 from dashboard.services import system_service, portfolio_service, market_service, strategy_service
@@ -186,6 +188,8 @@ def create_app():
     portfolio_view.register_callbacks(app)
     market_view.register_callbacks(app)
     strategy_view.register_callbacks(app)
+    strategy_monitoring_view.register_callbacks(app)
+    performance_dashboard_view.register_callbacks(app)
     
     # Store the app instance
     _app_instance = app
@@ -206,17 +210,7 @@ def register_callbacks(app):
         Input("current-view", "data")
     )
     def render_page_content(view):
-        """Render the content for the current view"""
-        # Get view configuration
-        views_config = app.config.get("views", {})
-        
-        # Check if the view is enabled
-        if view in views_config and not views_config[view].get("enabled", True):
-            return html.Div([
-                html.H2(f"{view.capitalize()} View Disabled"),
-                html.P("This view has been disabled in the configuration.")
-            ])
-        
+        """Render the appropriate view based on the current view selection."""
         if view == "system":
             return create_system_view()
         elif view == "portfolio":
@@ -225,9 +219,33 @@ def register_callbacks(app):
             return create_market_view()
         elif view == "strategy":
             return create_strategy_view()
+        elif view == "strategy-monitoring":
+            # Create a dummy DashboardState and DashboardController for now
+            # In a real implementation, these would be properly initialized
+            class DummyState:
+                def get_active_strategies(self):
+                    return [type('obj', (object,), {'id': 'strategy1', 'name': 'MA Crossover Strategy'})]
+            
+            class DummyController:
+                pass
+            
+            return create_strategy_monitoring_view(DummyState(), DummyController())
+        elif view == "performance-dashboard":
+            # Create a dummy DashboardState and DashboardController for now
+            class DummyState:
+                pass
+            
+            class DummyController:
+                pass
+            
+            return create_performance_dashboard_view(DummyState(), DummyController())
         else:
-            # Default to system view
-            return create_system_view()
+            return html.Div(
+                dbc.Alert(
+                    f"View '{view}' not found",
+                    color="danger"
+                )
+            )
     
     # Callback to update the control panel based on the current view
     @app.callback(
@@ -245,28 +263,38 @@ def register_callbacks(app):
             Input("nav-system", "n_clicks"),
             Input("nav-portfolio", "n_clicks"),
             Input("nav-market", "n_clicks"),
-            Input("nav-strategy", "n_clicks")
+            Input("nav-strategy", "n_clicks"),
+            Input("nav-strategy-monitoring", "n_clicks"),
+            Input("nav-performance-dashboard", "n_clicks")
         ],
         State("current-view", "data")
     )
-    def update_current_view(n_system, n_portfolio, n_market, n_strategy, current):
-        """Update the current view based on which navbar item was clicked"""
+    def update_current_view(n_system, n_portfolio, n_market, n_strategy, n_strategy_monitoring, 
+                          n_performance_dashboard, current):
+        """Update the current view based on navigation clicks."""
         ctx = dash.callback_context
         
         if not ctx.triggered:
+            # No clicks yet, return the current view
             return current
         
-        button_id = ctx.triggered[0]["prop_id"].split(".")[0]
+        # Get the ID of the element that triggered the callback
+        triggered_id = ctx.triggered[0]["prop_id"].split(".")[0]
         
-        if button_id == "nav-system":
+        if triggered_id == "nav-system":
             return "system"
-        elif button_id == "nav-portfolio":
+        elif triggered_id == "nav-portfolio":
             return "portfolio"
-        elif button_id == "nav-market":
+        elif triggered_id == "nav-market":
             return "market"
-        elif button_id == "nav-strategy":
+        elif triggered_id == "nav-strategy":
             return "strategy"
+        elif triggered_id == "nav-strategy-monitoring":
+            return "strategy-monitoring"
+        elif triggered_id == "nav-performance-dashboard":
+            return "performance-dashboard"
         
+        # Default case, return the current view
         return current
     
     # Callback to update server time

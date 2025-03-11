@@ -5,27 +5,50 @@ This module provides observability capabilities for the Instinct AI trading plat
 including logging, metrics, and tracing.
 """
 
-from .logging import get_logger, set_log_level, add_log_handler, remove_log_handler
-from .metrics import get_metrics_client, counter, gauge, histogram, summary
-from .tracing import get_tracer, start_span, end_span, add_event
+# Import individual components
+from .logging import LoggingManager
+from .metrics import MetricsManager
+from .tracing import TracingManager
+
+# Import unified manager
+from .observability_manager import (
+    ObservabilityManager,
+    observability_manager,
+    get_logger,
+    set_log_level,
+    record_metric,
+    increment_counter,
+    start_span,
+    start_trace
+)
+
+# Convenience functions from individual components
+from .logging import add_log_handler, remove_log_handler
+from .metrics import counter, gauge, histogram, summary
 
 __all__ = [
-    # Logging
+    # Managers
+    'ObservabilityManager',
+    'LoggingManager',
+    'MetricsManager',
+    'TracingManager',
+    'observability_manager',
+    
+    # Unified API
     'get_logger',
     'set_log_level',
+    'record_metric',
+    'increment_counter',
+    'start_span',
+    'start_trace',
+    
+    # Additional logging functions
     'add_log_handler',
     'remove_log_handler',
     
-    # Metrics
-    'get_metrics_client',
+    # Additional metrics functions
     'counter',
     'gauge',
     'histogram',
-    'summary',
-    
-    # Tracing
-    'get_tracer',
-    'start_span',
-    'end_span',
-    'add_event'
+    'summary'
 ] 

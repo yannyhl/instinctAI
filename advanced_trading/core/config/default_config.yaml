@@ -1,0 +1,78 @@
+# Default Configuration for Instinct AI Trading Platform
+# This file contains sensible defaults for the system
+
+system:
+  environment: "development"
+  log_level: "INFO"
+  timezone: "UTC"
+
+database:
+  host: "localhost"
+  port: 5432
+  name: "instinct_ai"
+  user: "instinct_user"
+  password: "change_me_in_production"
+  connection_pool: 5
+
+exchanges:
+  binance:
+    api_key: ""
+    api_secret: ""
+    testnet: true
+    rate_limit:
+      max_requests: 1200
+      time_window: 60
+  
+  bybit:
+    api_key: ""
+    api_secret: ""
+    testnet: true
+    rate_limit:
+      max_requests: 600
+      time_window: 60
+
+strategies:
+  ml_ensemble_strategy:
+    enabled: false
+    parameters:
+      model_type: "ensemble"
+      prediction_horizon: 24
+      confidence_threshold: 0.65
+      regime_aware: true
+    risk_limits:
+      max_position_size: 1.0
+      max_drawdown: 5.0
+      max_daily_loss: 2.0
+  
+  statistical_arbitrage:
+    enabled: false
+    parameters:
+      pairs: []
+      z_score_entry: 2.0
+      z_score_exit: 0.0
+      lookback_period: 100
+      half_life: 30
+    risk_limits:
+      max_position_size: 1.0
+      max_drawdown: 3.0
+      max_daily_loss: 1.5
+
+risk:
+  global_limits:
+    max_portfolio_value: 100000.0
+    max_drawdown: 10.0
+    max_daily_loss: 5.0
+    max_leverage: 3.0
+  
+  circuit_breakers:
+    enabled: true
+    volatility_threshold: 3.0
+    drawdown_threshold: 5.0
+    volume_threshold: 5.0
+
+execution:
+  default_exchange: "binance"
+  slippage_model: "percentage"
+  default_order_type: "limit"
+  retry_attempts: 3
+  retry_delay: 1000 

@@ -5,151 +5,170 @@ This module provides the navigation bar component for the dashboard.
 """
 
 import dash
-from dash import html, dcc
+from dash import html
 import dash_bootstrap_components as dbc
 
 # Import dashboard modules
 from dashboard.config import get_dashboard_config
 
 
-def create_navbar(title="Instinct AI Trading Platform", theme="light"):
+def create_navbar() -> dbc.Navbar:
     """
-    Create a navigation bar.
+    Create the navigation bar for the dashboard.
     
-    Args:
-        title: Dashboard title
-        theme: UI theme ("light" or "dark")
-        
     Returns:
-        Navbar component
+        dbc.Navbar: The navigation bar component.
     """
-    # Get views configuration
-    config = get_dashboard_config()
-    views_config = config.get("views", {})
-    
-    # Determine text and background color based on theme
-    bg_color = "light" if theme == "light" else "dark"
-    text_color = "dark" if theme == "light" else "light"
-    
-    # Create navigation items
-    nav_items = []
+    brand = dbc.NavbarBrand(
+        [
+            html.I(className="fas fa-chart-line me-2"),
+            "Instinct AI"
+        ],
+        href="#",
+        className="ms-2"
+    )
     
     # System nav item
-    if views_config.get("system", {}).get("enabled", True):
-        nav_items.append(
-            dbc.NavItem(
-                dbc.NavLink(
-                    [
-                        html.I(className="fas fa-server mr-2"),
-                        "System"
-                    ],
-                    id="nav-system",
-                    href="#",
-                    active=True
-                )
-            )
+    system_nav = dbc.NavItem(
+        dbc.NavLink(
+            [
+                html.I(className="fas fa-server me-2"),
+                "System"
+            ],
+            href="#",
+            id="nav-system"
         )
+    )
     
     # Portfolio nav item
-    if views_config.get("portfolio", {}).get("enabled", True):
-        nav_items.append(
-            dbc.NavItem(
-                dbc.NavLink(
-                    [
-                        html.I(className="fas fa-chart-pie mr-2"),
-                        "Portfolio"
-                    ],
-                    id="nav-portfolio",
-                    href="#"
-                )
-            )
+    portfolio_nav = dbc.NavItem(
+        dbc.NavLink(
+            [
+                html.I(className="fas fa-briefcase me-2"),
+                "Portfolio"
+            ],
+            href="#",
+            id="nav-portfolio"
         )
+    )
     
     # Market nav item
-    if views_config.get("market", {}).get("enabled", True):
-        nav_items.append(
-            dbc.NavItem(
-                dbc.NavLink(
-                    [
-                        html.I(className="fas fa-chart-line mr-2"),
-                        "Market"
-                    ],
-                    id="nav-market",
-                    href="#"
-                )
-            )
+    market_nav = dbc.NavItem(
+        dbc.NavLink(
+            [
+                html.I(className="fas fa-chart-bar me-2"),
+                "Market"
+            ],
+            href="#",
+            id="nav-market"
         )
+    )
     
     # Strategy nav item
-    if views_config.get("strategy", {}).get("enabled", True):
-        nav_items.append(
-            dbc.NavItem(
-                dbc.NavLink(
-                    [
-                        html.I(className="fas fa-cogs mr-2"),
-                        "Strategy"
-                    ],
-                    id="nav-strategy",
-                    href="#"
-                )
-            )
+    strategy_nav = dbc.NavItem(
+        dbc.NavLink(
+            [
+                html.I(className="fas fa-chess me-2"),
+                "Strategies"
+            ],
+            href="#",
+            id="nav-strategy"
         )
+    )
     
-    # Create navbar
-    navbar = dbc.Navbar(
+    # Strategy Monitoring nav item
+    strategy_monitoring_nav = dbc.NavItem(
+        dbc.NavLink(
+            [
+                html.I(className="fas fa-tachometer-alt me-2"),
+                "Strategy Monitoring"
+            ],
+            href="#",
+            id="nav-strategy-monitoring"
+        )
+    )
+    
+    # Performance Dashboard nav item
+    performance_dashboard_nav = dbc.NavItem(
+        dbc.NavLink(
+            [
+                html.I(className="fas fa-chart-area me-2"),
+                "Performance"
+            ],
+            href="#",
+            id="nav-performance-dashboard"
+        )
+    )
+    
+    # Nav items
+    nav_items = dbc.Nav(
         [
-            # Brand
-            dbc.Row(
-                [
-                    dbc.Col(
-                        html.I(className="fas fa-robot mr-2 ml-2"),
-                        width="auto"
-                    ),
-                    dbc.Col(
-                        dbc.NavbarBrand(title, className="ml-2"),
-                        width="auto"
-                    ),
-                ],
-                align="center",
-                no_gutters=True,
-            ),
-            
-            # Environment indicator
-            dbc.NavbarToggler(id="navbar-toggler"),
-            
-            # Navigation items
-            dbc.Collapse(
-                dbc.Nav(
-                    nav_items,
-                    className="ml-auto",
-                    navbar=True
-                ),
-                id="navbar-collapse",
-                navbar=True,
-            ),
-            
-            # Right side items
-            dbc.Row(
-                [
-                    dbc.Col(
-                        html.Span(
-                            [
-                                html.I(className="fas fa-circle text-success mr-1"),
-                                "Running"
-                            ],
-                            className=f"text-{text_color} mr-3"
-                        ),
-                        width="auto"
-                    ),
-                ],
-                align="center",
-                no_gutters=True,
-                className="ml-auto mr-3"
+            system_nav,
+            portfolio_nav,
+            market_nav,
+            strategy_nav,
+            strategy_monitoring_nav,
+            performance_dashboard_nav
+        ],
+        navbar=True,
+        className="me-auto"
+    )
+    
+    # User menu dropdown
+    user_menu = dbc.DropdownMenu(
+        [
+            dbc.DropdownMenuItem("Settings", href="#"),
+            dbc.DropdownMenuItem("Profile", href="#"),
+            dbc.DropdownMenuItem(divider=True),
+            dbc.DropdownMenuItem("Logout", href="#")
+        ],
+        label=html.Span([
+            html.I(className="fas fa-user me-2"),
+            "User"
+        ]),
+        nav=True,
+        align_end=True
+    )
+    
+    # System status indicator
+    system_status = html.Div(
+        [
+            html.Span("System: ", className="me-1"),
+            html.Span(
+                "ONLINE",
+                className="badge bg-success"
             )
         ],
-        color=bg_color,
-        dark=(theme == "dark"),
-        className="mb-5",
+        className="d-flex align-items-center me-3"
+    )
+    
+    # Right side items
+    right_nav = dbc.Nav(
+        [
+            system_status,
+            user_menu
+        ],
+        navbar=True,
+        className="ms-auto"
+    )
+    
+    # Assemble navbar
+    navbar = dbc.Navbar(
+        dbc.Container(
+            [
+                brand,
+                dbc.NavbarToggler(id="navbar-toggler"),
+                dbc.Collapse(
+                    [nav_items, right_nav],
+                    id="navbar-collapse",
+                    navbar=True
+                )
+            ],
+            fluid=True
+        ),
+        color="dark",
+        dark=True,
+        sticky="top"
     )
     
     return navbar 

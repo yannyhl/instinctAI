@@ -7,9 +7,10 @@ with advanced features for accurate performance evaluation and strategy validati
 Key components:
 1. Engine - Core backtesting functionality including walk-forward testing
 2. Analysis - Tools for analyzing backtest results
-3. Performance - Metrics for evaluating strategy performance
-4. Visualization - Tools for visualizing backtest results
-5. Reporting - Generating reports from backtest results
+3. Optimization - Tools for optimizing strategy parameters and scenario testing
+4. Performance - Metrics for evaluating strategy performance
+5. Visualization - Tools for visualizing backtest results
+6. Reporting - Generating reports from backtest results
 """
 
 import logging
@@ -21,6 +22,16 @@ logger = logging.getLogger(__name__)
 try:
     # Engine components
     from advanced_trading.backtesting.engine.walk_forward import WalkForwardTest
+    from advanced_trading.backtesting.engine.backtest import Backtest, BacktestConfig, BacktestResult
+    
+    # Import optimization components if available
+    try:
+        from advanced_trading.backtesting.optimization import (
+            StrategyOptimizer, ScenarioTester, 
+            OptimizationMetric, ScenarioType
+        )
+    except ImportError:
+        logger.warning("Optimization module not found. Optimization functionality will be limited.")
     
     # Import analysis components if available
     try:
@@ -30,6 +41,13 @@ try:
     
     __all__ = [
         'WalkForwardTest',
+        'Backtest',
+        'BacktestConfig',
+        'BacktestResult',
+        'StrategyOptimizer',
+        'ScenarioTester',
+        'OptimizationMetric',
+        'ScenarioType',
     ]
     
     logger.info("Backtesting module loaded successfully")

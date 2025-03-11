@@ -87,16 +87,15 @@ class StrategyResult:
 class StrategyState:
     """State management for strategies.
     
-    This class manages the state of a strategy, including its current positions,
-    historical signals, and other runtime state.
+    This class manages the state of a strategy, including positions, signals,
+    metrics, and parameters.
     
     Attributes:
         strategy_name (str): The name of the strategy.
-        positions (Dict[str, Dict[str, Any]]): Current positions by symbol.
-        signals (Dict[str, List[Dict[str, Any]]]): Historical signals by symbol.
-        metrics (Dict[str, float]): Current performance metrics.
-        parameters (Dict[str, Any]): Current strategy parameters.
-        last_update (pd.Timestamp): Timestamp of the last update.
+        positions (Dict[str, Dict[str, Any]]): The current positions by symbol.
+        signals (Dict[str, List[Dict[str, Any]]]): The recent signals by symbol.
+        metrics (Dict[str, float]): The current performance metrics.
+        parameters (Dict[str, Any]): The current strategy parameters.
     """
     
     def __init__(self, strategy_name: str):
@@ -110,29 +109,26 @@ class StrategyState:
         self.signals: Dict[str, List[Dict[str, Any]]] = {}
         self.metrics: Dict[str, float] = {}
         self.parameters: Dict[str, Any] = {}
-        self.last_update: Optional[pd.Timestamp] = None
     
     def update_position(self, symbol: str, position: Dict[str, Any]) -> None:
         """Update the position for a symbol.
         
         Args:
-            symbol (str): The trading symbol.
-            position (Dict[str, Any]): The position details.
+            symbol (str): The symbol.
+            position (Dict[str, Any]): The position data.
         """
         self.positions[symbol] = position
-        self.last_update = pd.Timestamp.now()
     
     def add_signal(self, symbol: str, signal: Dict[str, Any]) -> None:
         """Add a signal for a symbol.
         
         Args:
-            symbol (str): The trading symbol.
-            signal (Dict[str, Any]): The signal details.
+            symbol (str): The symbol.
+            signal (Dict[str, Any]): The signal data.
         """
         if symbol not in self.signals:
             self.signals[symbol] = []
         self.signals[symbol].append(signal)
-        self.last_update = pd.Timestamp.now()
     
     def update_metrics(self, metrics: Dict[str, float]) -> None:
         """Update the performance metrics.
@@ -141,7 +137,6 @@ class StrategyState:
             metrics (Dict[str, float]): The performance metrics.
         """
         self.metrics.update(metrics)
-        self.last_update = pd.Timestamp.now()
     
     def update_parameters(self, parameters: Dict[str, Any]) -> None:
         """Update the strategy parameters.
@@ -150,7 +145,6 @@ class StrategyState:
             parameters (Dict[str, Any]): The strategy parameters.
         """
         self.parameters.update(parameters)
-        self.last_update = pd.Timestamp.now()
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert the state to a dictionary.
@@ -163,8 +157,7 @@ class StrategyState:
             "positions": self.positions,
             "signals": self.signals,
             "metrics": self.metrics,
-            "parameters": self.parameters,
-            "last_update": self.last_update.isoformat() if self.last_update else None
+            "parameters": self.parameters
         }
     
     @classmethod
@@ -172,18 +165,16 @@ class StrategyState:
         """Create a state from a dictionary.
         
         Args:
-            data (Dict[str, Any]): The state as a dictionary.
+            data (Dict[str, Any]): The state data.
         
         Returns:
-            StrategyState: The state object.
+            StrategyState: The state.
         """
         state = cls(data["strategy_name"])
         state.positions = data.get("positions", {})
         state.signals = data.get("signals", {})
         state.metrics = data.get("metrics", {})
         state.parameters = data.get("parameters", {})
-        if data.get("last_update"):
-            state.last_update = pd.Timestamp(data["last_update"])
         return state
 
 
@@ -198,6 +189,8 @@ class Strategy(ABC):
         name (str): The name of the strategy.
         config (StrategyConfig): The strategy configuration.
         state (StrategyState): The strategy state.
+        version (str): The strategy version.
+        is_running (bool): Whether the strategy is currently running.
     """
     
     def __init__(self, config: StrategyConfig):
@@ -209,14 +202,73 @@ class Strategy(ABC):
         self.name = config.name
         self.config = config
         self.state = StrategyState(config.name)
+        self.version = "1.0.0"  # Default version
+        self.is_running = False
+        self._is_paused = False
+        self._warmup_data = []
     
     @abstractmethod
-    def initialize(self) -> None:
+    def initialize(self, parameters: Optional[Dict[str, Any]] = None, 
+                  dependencies: Optional[Dict[str, Any]] = None) -> None:
         """Initialize the strategy.
         
         This method is called once when the strategy is created. It should
         perform any one-time initialization tasks.
+        
+        Args:
+            parameters: Optional parameters to override the default configuration
+            dependencies: Optional dependencies like data sources, models, etc.
         """
+        pass
+    
+    def process_warmup_data(self, data: pd.DataFrame) -> None:
+        """Process warm-up data before the strategy is fully active.
+        
+        This method is called during the strategy warm-up phase to provide historical
+        data that the strategy can use to initialize its internal state, indicators,
+        or models.
+        
+        Args:
+            data (pd.DataFrame): Historical data for warm-up.
+        """
+        # Default implementation stores the data
+        self._warmup_data.append(data)
+        
+        # Subclasses should override this method to properly process warm-up data
+        pass
+    
+    def start(self) -> None:
+        """Start the strategy execution.
+        
+        This method is called when the strategy should begin active trading.
+        """
+        self.is_running = True
+        self._is_paused = False
+    
+    def pause(self) -> None:
+        """Pause the strategy execution.
+        
+        This method is called when the strategy should temporarily pause trading.
+        """
+        self._is_paused = True
+    
+    def stop(self) -> None:
+        """Stop the strategy execution.
+        
+        This method is called when the strategy should stop trading and clean up resources.
+        """
+        self.is_running = False
+        self._is_paused = False
+        
+        # Perform any necessary cleanup
+        self._cleanup()
+    
+    def _cleanup(self) -> None:
+        """Clean up resources used by the strategy.
+        
+        This method should be overridden by subclasses to perform strategy-specific cleanup.
+        """
+        # Default implementation does nothing
         pass
     
     @abstractmethod
@@ -273,6 +325,10 @@ class Strategy(ABC):
         Returns:
             StrategyResult: The results of the update.
         """
+        # Skip processing if strategy is not running or is paused
+        if not self.is_running or self._is_paused:
+            return StrategyResult(strategy_name=self.name)
+            
         processed_data = self.process_data(data)
         signals = self.generate_signals(processed_data)
         result = self.execute(signals)
@@ -311,23 +367,24 @@ class Strategy(ABC):
         self.state = state
     
     def save(self) -> Dict[str, Any]:
-        """Save the strategy state.
+        """Save the strategy.
         
         Returns:
-            Dict[str, Any]: The saved state.
+            Dict[str, Any]: The saved strategy data.
         """
         return {
             "name": self.name,
             "config": self.config.__dict__,
-            "state": self.state.to_dict()
+            "state": self.state.to_dict(),
+            "version": self.version
         }
     
     @classmethod
     def load(cls, data: Dict[str, Any]) -> 'Strategy':
-        """Load a strategy from saved state.
+        """Load a strategy.
         
         Args:
-            data (Dict[str, Any]): The saved state.
+            data (Dict[str, Any]): The strategy data.
         
         Returns:
             Strategy: The loaded strategy.
@@ -335,6 +392,8 @@ class Strategy(ABC):
         config = StrategyConfig(**data["config"])
         strategy = cls(config)
         strategy.state = StrategyState.from_dict(data["state"])
+        if "version" in data:
+            strategy.version = data["version"]
         return strategy
 
 
