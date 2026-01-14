@@ -178,6 +178,8 @@ export function useUpdateDocument(projectId: string) {
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ["documents", projectId] });
       queryClient.invalidateQueries({ queryKey: ["documents", projectId, variables.id] });
+      // Also invalidate embed cache for this document
+      queryClient.invalidateQueries({ queryKey: ["documents", projectId, variables.id, "embed"] });
     },
   });
 }

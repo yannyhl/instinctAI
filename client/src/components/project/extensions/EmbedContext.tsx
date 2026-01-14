@@ -1,4 +1,4 @@
-import { createContext, useContext, type ReactNode, type FC } from "react";
+import { createContext, useContext, useMemo, type ReactNode, type FC } from "react";
 
 interface EmbedContextValue {
   projectId: string;
@@ -24,15 +24,19 @@ export const EmbedContextProvider: FC<EmbedContextProviderProps> = ({
   documentIdStack = [],
   onNavigate,
 }) => {
+  // Memoize context value to prevent unnecessary re-renders
+  const value = useMemo(
+    () => ({
+      projectId,
+      currentNestingDepth,
+      documentIdStack,
+      onNavigate,
+    }),
+    [projectId, currentNestingDepth, documentIdStack, onNavigate]
+  );
+
   return (
-    <EmbedContext.Provider
-      value={{
-        projectId,
-        currentNestingDepth,
-        documentIdStack,
-        onNavigate,
-      }}
-    >
+    <EmbedContext.Provider value={value}>
       {children}
     </EmbedContext.Provider>
   );

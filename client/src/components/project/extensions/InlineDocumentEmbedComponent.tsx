@@ -1,8 +1,8 @@
-import { type FC, useState, useMemo, useCallback } from "react";
+import { type FC, useMemo, useCallback } from "react";
 import { NodeViewWrapper, type NodeViewProps, useEditor, EditorContent } from "@tiptap/react";
 import { FileText, ExternalLink, ChevronDown, ChevronRight, RefreshCw, AlertCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useEmbedContext, canEmbed, MAX_EMBED_DEPTH, EmbedContextProvider } from "./EmbedContext";
+import { useEmbedContext, canEmbed, EmbedContextProvider } from "./EmbedContext";
 import { useEmbeddedDocument } from "@/hooks/useDocuments";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
@@ -13,6 +13,7 @@ import Placeholder from "@tiptap/extension-placeholder";
 import Link from "@tiptap/extension-link";
 import TaskList from "@tiptap/extension-task-list";
 import TaskItem from "@tiptap/extension-task-item";
+import { InlineDocumentEmbedExtension } from "./InlineDocumentEmbedExtension";
 
 interface ReadOnlyEditorProps {
   content: unknown;
@@ -29,8 +30,9 @@ const ReadOnlyEditor: FC<ReadOnlyEditorProps> = ({
   documentIdStack,
   onNavigate,
 }) => {
-  const editor = useEditor({
-    extensions: [
+  // Memoize extensions to prevent recreation on every render
+  const extensions = useMemo(
+    () => [
       StarterKit.configure({
         heading: { levels: [1, 2, 3] },
       }),
@@ -47,7 +49,14 @@ const ReadOnlyEditor: FC<ReadOnlyEditorProps> = ({
       TaskItem.configure({
         nested: true,
       }),
+      // Include InlineDocumentEmbedExtension for nested embeds
+      InlineDocumentEmbedExtension,
     ],
+    []
+  );
+
+  const editor = useEditor({
+    extensions,
     content: content || { type: "doc", content: [] },
     editable: false,
     editorProps: {
@@ -77,11 +86,9 @@ export const InlineDocumentEmbedComponent: FC<NodeViewProps> = ({
   node,
   updateAttributes,
   selected,
-  getPos,
 }) => {
   const { documentId, title, icon, isCollapsed } = node.attrs;
   const embedContext = useEmbedContext();
-  const [retryCount, setRetryCount] = useState(0);
 
   // Get context values or defaults (for top-level renders outside context)
   const projectId = embedContext?.projectId ?? "";
@@ -131,7 +138,6 @@ export const InlineDocumentEmbedComponent: FC<NodeViewProps> = ({
   const handleRetry = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    setRetryCount((c) => c + 1);
     refetch();
   };
 
